@@ -57,47 +57,47 @@ const feeds: FeedConfig[] = [
   //   skills: ["javascript", "typescript", "web"],
   // },
 
-  // // Frontend
-  // {
-  //   source: "React Blog",
-  //   url: "https://react.dev/blog/rss.xml",
-  //   category: "frontend",
-  //   skills: ["react", "frontend", "javascript"],
-  // },
-  // {
-  //   source: "Vercel Blog",
-  //   url: "https://vercel.com/blog/rss",
-  //   category: "frontend",
-  //   skills: ["nextjs", "frontend", "deployment", "web"],
-  // },
+  // Frontend
+  {
+    source: "React Blog",
+    url: "https://react.dev/blog/rss.xml",
+    category: "frontend",
+    skills: ["react", "frontend", "javascript"],
+  },
+  {
+    source: "Vercel Blog",
+    url: "https://vercel.com/blog/rss",
+    category: "frontend",
+    skills: ["nextjs", "frontend", "deployment", "web"],
+  },
 
-  // // Cloud / DevOps
-  // {
-  //   source: "Cloudflare Changelog",
-  //   url: "https://developers.cloudflare.com/changelog/rss.xml",
-  //   category: "devops",
-  //   skills: ["cloudflare", "edge", "security", "deployment"],
-  // },
-  // {
-  //   source: "AWS What's New",
-  //   url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/",
-  //   category: "devops",
-  //   skills: ["aws", "cloud", "infrastructure"],
-  // },
+  // Cloud / DevOps
+  {
+    source: "Cloudflare Changelog",
+    url: "https://developers.cloudflare.com/changelog/rss.xml",
+    category: "devops",
+    skills: ["cloudflare", "edge", "security", "deployment"],
+  },
+  {
+    source: "AWS What's New",
+    url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/",
+    category: "devops",
+    skills: ["aws", "cloud", "infrastructure"],
+  },
 
-  // // AI / LLM
-  // {
-  //   source: "OpenAI Blog",
-  //   url: "https://openai.com/news/rss.xml",
-  //   category: "ai",
-  //   skills: ["ai", "llm", "agents", "api"],
-  // },
-  // {
-  //   source: "Hugging Face Blog",
-  //   url: "https://huggingface.co/blog/feed.xml",
-  //   category: "ai",
-  //   skills: ["ai", "machine-learning", "open-source-models"],
-  // },
+  // AI / LLM
+  {
+    source: "OpenAI Blog",
+    url: "https://openai.com/news/rss.xml",
+    category: "ai",
+    skills: ["ai", "llm", "agents", "api"],
+  },
+  {
+    source: "Hugging Face Blog",
+    url: "https://huggingface.co/blog/feed.xml",
+    category: "ai",
+    skills: ["ai", "machine-learning", "open-source-models"],
+  },
 ];
 
 export class NewsCollector {
