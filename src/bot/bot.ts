@@ -27,5 +27,47 @@ export function createBot(newsService: NewsService, newsCollector: NewsCollector
   registerSettingsCommand(bot);
   bot.catch(handleBotError);
 
+  // Thiết lập menu Lệnh (Command Menu) tự động trên Telegram
+  void bot.api.setMyCommands([
+    { command: "start", description: "Start the bot & show help guide" },
+    { command: "news", description: "Get latest tech articles" },
+    { command: "category", description: "Filter news topics using AI" },
+    { command: "settings", description: "Configure language & digest preferences" },
+    { command: "submitfeed", description: "Suggest a new RSS source" },
+    { command: "stop", description: "Stop receiving news" },
+  ]);
+
+  void bot.api.setMyCommands(
+    [
+      { command: "start", description: "Bắt đầu & xem hướng dẫn" },
+      { command: "news", description: "Xem tin tức công nghệ mới nhất" },
+      { command: "category", description: "Lọc chủ đề tin bằng AI" },
+      { command: "settings", description: "Cấu hình ngôn ngữ & nhận tin tổng hợp" },
+      { command: "submitfeed", description: "Đề xuất nguồn tin RSS mới" },
+      { command: "stop", description: "Hủy nhận tin tự động" },
+    ],
+    { language_code: "vi" },
+  );
+
+  // Thiết lập menu Lệnh riêng biệt cho Admin (Chỉ Admin nhìn thấy các lệnh quản trị)
+  for (const adminId of env.adminChatIds) {
+    void bot.api.setMyCommands(
+      [
+        { command: "start", description: "Bắt đầu & xem hướng dẫn" },
+        { command: "news", description: "Xem tin tức công nghệ mới nhất" },
+        { command: "category", description: "Lọc chủ đề tin bằng AI" },
+        { command: "settings", description: "Cấu hình ngôn ngữ & nhận tin tổng hợp" },
+        { command: "submitfeed", description: "Đề xuất nguồn tin RSS mới" },
+        { command: "stop", description: "Hủy nhận tin tự động" },
+        // Lệnh admin
+        { command: "addfeed", description: "[ADMIN] Thêm nguồn RSS ngay lập tức" },
+        { command: "sync", description: "[ADMIN] Cào tin & gửi tin tức thì" },
+        { command: "stats", description: "[ADMIN] Xem thống kê hệ thống" },
+        { command: "ping", description: "[ADMIN] Kiểm tra hoạt động bot" },
+      ],
+      { scope: { type: "chat", chat_id: adminId } },
+    );
+  }
+
   return bot;
 }

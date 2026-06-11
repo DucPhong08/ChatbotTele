@@ -30,6 +30,14 @@ type CandidateArticle = {
   publishedAt: Date;
 };
 
+type FeedDoc = {
+  url: string;
+  source: string;
+  category: string;
+  skills: string[];
+};
+
+const LOG = "[NewsCollector]";
 const FEED_FETCH_COOLDOWN_MS = 3 * 60 * 1000;
 const AI_BATCH_SIZE = 5;
 const SCRAPE_CONCURRENCY = 3;
@@ -48,129 +56,151 @@ export class NewsCollector {
   constructor(private readonly newsService: NewsService) {}
 
   async collect(): Promise<NewsView[]> {
-    const collectedItems: CreateNewsInput[] = [];
-    const seenUrls = new Set<string>();
-
     await this.seedFeedsIfEmpty();
 
     const activeFeeds = await FeedModel.find({ isActive: true }).lean().exec();
+    console.log(`${LOG} Bắt đầu quét tin từ ${activeFeeds.length} nguồn đang hoạt động.`);
 
-    console.log(`[NewsCollector] Bắt đầu quét tin từ ${activeFeeds.length} nguồn đang hoạt động.`);
+    const seenUrls = new Set<string>();
+    const collectedItems: CreateNewsInput[] = [];
 
     for (const feed of activeFeeds) {
       try {
-        if (this.shouldSkipFeed(feed.url, feed.source)) {
-          continue;
-        }
+        const items = await this.fetchFeedItems(feed, seenUrls);
+        if (items.length === 0) continue;
 
-        const parsedFeed = await this.parser.parseURL(feed.url);
-        this.lastFetchTimes.set(feed.url, Date.now());
-
-        const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
-
-        if (candidates.length === 0) {
-          continue;
-        }
-
-        const newCandidates = await this.filterNewCandidates(candidates);
-
-        if (newCandidates.length === 0) {
-          continue;
-        }
-
-        for (let i = 0; i < newCandidates.length; i += AI_BATCH_SIZE) {
-          const batch = newCandidates.slice(i, i + AI_BATCH_SIZE);
-
-          try {
-            const scrapedBatch = await this.processPool(
-              batch,
-              async (item) => {
-                console.log(`[NewsCollector] Đang cào chi tiết bài viết: ${item.url}`);
-
-                const fullContent = await scrapeArticleContent(item.url);
-
-                return {
-                  ...item,
-                  content: fullContent || item.content || "",
-                };
-              },
-              SCRAPE_CONCURRENCY,
-            );
-
-            const batchInput = scrapedBatch.map((item) => ({
-              title: item.title,
-              content: item.content,
-              source: feed.source,
-              url: item.url,
-              publishedAt: item.publishedAt,
-            }));
-
-            const aiResults = await AIService.processArticleBatch(batchInput);
-
-            for (let j = 0; j < scrapedBatch.length; j++) {
-              const item = scrapedBatch[j];
-              const aiResult = aiResults[j];
-
-              if (!aiResult) {
-                continue;
-              }
-
-              const skills =
-                Array.isArray(aiResult.skills) && aiResult.skills.length > 0
-                  ? aiResult.skills
-                  : feed.skills;
-
-              collectedItems.push({
-                title: aiResult.titleVi || item.title,
-                titleEn: aiResult.titleEn || item.title,
-                url: item.url,
-                source: feed.source,
-                publishedAt: item.publishedAt,
-                summary: aiResult.summaryVi || item.content.slice(0, 300),
-                summaryEn: aiResult.summaryEn || "",
-                category: aiResult.category || feed.category,
-                tags: Array.isArray(aiResult.tags) ? aiResult.tags : [],
-                skills,
-                importanceScore:
-                  typeof aiResult.importanceScore === "number" ? aiResult.importanceScore : 50,
-                importanceReason: aiResult.importanceReasonVi || "",
-                importanceReasonEn: aiResult.importanceReasonEn || "",
-              });
-            }
-          } catch (error) {
-            console.error(`[NewsCollector] Lỗi khi xử lý batch của feed ${feed.source}:`, error);
-          }
-        }
+        const processed = await this.processFeedItems(items, feed);
+        collectedItems.push(...processed);
       } catch (error) {
-        console.error(
-          `[NewsCollector] Thất bại khi thu thập dữ liệu RSS feed từ: ${feed.source}`,
-          error,
-        );
+        console.error(`${LOG} Thất bại khi thu thập dữ liệu RSS feed từ: ${feed.source}`, error);
       }
     }
 
-    if (collectedItems.length === 0) {
-      return [];
-    }
+    if (collectedItems.length === 0) return [];
 
     await this.newsService.createManyIfNotExists(collectedItems);
 
     const urls = collectedItems.map((item) => item.url);
-
     return NewsModel.find({ url: { $in: urls } })
       .lean<NewsView[]>()
       .exec();
   }
 
-  private async seedFeedsIfEmpty(): Promise<void> {
-    const count = await FeedModel.countDocuments();
+  /**
+   * Fetch và lọc các bài mới từ một feed, trả về candidates chưa có trong DB.
+   * Trả về mảng rỗng nếu feed bị skip hoặc không có bài mới.
+   */
+  private async fetchFeedItems(feed: FeedDoc, seenUrls: Set<string>): Promise<CandidateArticle[]> {
+    if (this.shouldSkipFeed(feed.url, feed.source)) return [];
 
-    if (count > 0) {
-      return;
+    const parsedFeed = await this.parser.parseURL(feed.url);
+    this.lastFetchTimes.set(feed.url, Date.now());
+
+    const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
+    if (candidates.length === 0) return [];
+
+    return this.filterNewCandidates(candidates);
+  }
+
+  /**
+   * Scrape + AI-process toàn bộ candidates của một feed theo batch.
+   */
+  private async processFeedItems(
+    candidates: CandidateArticle[],
+    feed: FeedDoc,
+  ): Promise<CreateNewsInput[]> {
+    const results: CreateNewsInput[] = [];
+
+    for (let i = 0; i < candidates.length; i += AI_BATCH_SIZE) {
+      const batch = candidates.slice(i, i + AI_BATCH_SIZE);
+
+      try {
+        const scrapedBatch = await this.scrapeBatch(batch);
+        const batchResults = await this.processAiBatch(scrapedBatch, feed);
+        results.push(...batchResults);
+      } catch (error) {
+        console.error(`${LOG} Lỗi khi xử lý batch của feed ${feed.source}:`, error);
+      }
     }
 
+    return results;
+  }
+
+  /**
+   * Scrape nội dung đầy đủ cho từng bài trong batch, chạy song song với SCRAPE_CONCURRENCY.
+   */
+  private async scrapeBatch(batch: CandidateArticle[]): Promise<CandidateArticle[]> {
+    return this.processPool(
+      batch,
+      async (item) => {
+        console.log(`${LOG} Đang cào chi tiết bài viết: ${item.url}`);
+        const fullContent = await scrapeArticleContent(item.url);
+        return { ...item, content: fullContent || item.content || "" };
+      },
+      SCRAPE_CONCURRENCY,
+    );
+  }
+
+  /**
+   * Gửi batch cho AI và map kết quả về CreateNewsInput.
+   */
+  private async processAiBatch(
+    scrapedBatch: CandidateArticle[],
+    feed: FeedDoc,
+  ): Promise<CreateNewsInput[]> {
+    const batchInput = scrapedBatch.map((item) => ({
+      title: item.title,
+      content: item.content,
+      source: feed.source,
+      url: item.url,
+      publishedAt: item.publishedAt,
+    }));
+
+    const aiResults = await AIService.processArticleBatch(batchInput);
+    const collected: CreateNewsInput[] = [];
+
+    for (let j = 0; j < scrapedBatch.length; j++) {
+      const item = scrapedBatch[j];
+      const aiResult = aiResults[j];
+      if (!aiResult) continue;
+
+      collected.push(this.buildNewsInput(item, aiResult, feed));
+    }
+
+    return collected;
+  }
+
+  private buildNewsInput(
+    item: CandidateArticle,
+    aiResult: Awaited<ReturnType<typeof AIService.processArticleBatch>>[number],
+    feed: FeedDoc,
+  ): CreateNewsInput {
+    const skills =
+      Array.isArray(aiResult.skills) && aiResult.skills.length > 0 ? aiResult.skills : feed.skills;
+
+    return {
+      title: aiResult.titleVi || item.title,
+      titleEn: aiResult.titleEn || item.title,
+      url: item.url,
+      source: feed.source,
+      publishedAt: item.publishedAt,
+      summary: aiResult.summaryVi || item.content.slice(0, 300),
+      summaryEn: aiResult.summaryEn || "",
+      category: aiResult.category || feed.category,
+      tags: Array.isArray(aiResult.tags) ? aiResult.tags : [],
+      skills,
+      importanceScore: typeof aiResult.importanceScore === "number" ? aiResult.importanceScore : 50,
+      importanceReason: aiResult.importanceReasonVi || "",
+      importanceReasonEn: aiResult.importanceReasonEn || "",
+    };
+  }
+
+  private async seedFeedsIfEmpty(): Promise<void> {
+    const count = await FeedModel.countDocuments();
+    if (count > 0) return;
+
     console.log(
-      `[NewsCollector] CSDL chưa có feed nào. Tiến hành nạp ${feeds.length} feed tĩnh từ cấu hình.`,
+      `${LOG} CSDL chưa có feed nào. Tiến hành nạp ${feeds.length} feed tĩnh từ cấu hình.`,
     );
 
     await FeedModel.bulkWrite(
@@ -193,15 +223,11 @@ export class NewsCollector {
   }
 
   private shouldSkipFeed(feedUrl: string, source: string): boolean {
-    const now = Date.now();
-    const lastFetch = this.lastFetchTimes.get(feedUrl) || 0;
-
-    if (now - lastFetch < FEED_FETCH_COOLDOWN_MS) {
-      console.log(`[NewsCollector] Bỏ qua nguồn ${source} vì vừa quét dưới 3 phút trước.`);
-
+    const lastFetch = this.lastFetchTimes.get(feedUrl) ?? 0;
+    if (Date.now() - lastFetch < FEED_FETCH_COOLDOWN_MS) {
+      console.log(`${LOG} Bỏ qua nguồn ${source} vì vừa quét dưới 3 phút trước.`);
       return true;
     }
-
     return false;
   }
 
@@ -210,13 +236,8 @@ export class NewsCollector {
       .map((item) => {
         const title = item.title?.trim();
         const url = this.normalizeUrl(item.link);
-
-        if (!title || !url || seenUrls.has(url)) {
-          return null;
-        }
-
+        if (!title || !url || seenUrls.has(url)) return null;
         seenUrls.add(url);
-
         return {
           title,
           url,
@@ -229,33 +250,20 @@ export class NewsCollector {
 
   private async filterNewCandidates(candidates: CandidateArticle[]): Promise<CandidateArticle[]> {
     const urls = candidates.map((item) => item.url);
-
-    const existingItems = await NewsModel.find({
-      url: { $in: urls },
-    })
+    const existing = await NewsModel.find({ url: { $in: urls } })
       .select("url")
       .lean<Array<{ url: string }>>()
       .exec();
-
-    const existingUrls = new Set(existingItems.map((item) => item.url));
-
+    const existingUrls = new Set(existing.map((item) => item.url));
     return candidates.filter((item) => !existingUrls.has(item.url));
   }
 
   private normalizeUrl(value?: string): string {
-    if (!value) {
-      return "";
-    }
-
+    if (!value) return "";
     try {
       const url = new URL(value.trim());
-
-      if (!["http:", "https:"].includes(url.protocol)) {
-        return "";
-      }
-
+      if (!["http:", "https:"].includes(url.protocol)) return "";
       url.hash = "";
-
       return url.toString();
     } catch {
       return "";
@@ -264,42 +272,37 @@ export class NewsCollector {
 
   /**
    * Xử lý song song với giới hạn concurrency.
-   * Tránh gọi quá nhiều request cùng lúc gây rate limit.
+   * Dùng sentinel object để phân biệt "lỗi" vs "kết quả hợp lệ là undefined".
    */
   private async processPool<T, R>(
     items: T[],
     fn: (item: T) => Promise<R>,
     concurrency: number,
   ): Promise<R[]> {
-    const results: R[] = new Array(items.length);
+    const FAILED = Symbol("failed");
+    const results: (R | typeof FAILED)[] = new Array(items.length);
     let index = 0;
 
     const worker = async () => {
       while (index < items.length) {
-        const currentIndex = index++;
-
+        const i = index++;
         try {
-          results[currentIndex] = await fn(items[currentIndex]);
+          results[i] = await fn(items[i]);
         } catch (error) {
-          console.error(`[NewsCollector] Lỗi khi xử lý item song song:`, error);
+          console.error(`${LOG} Lỗi khi xử lý item song song:`, error);
+          results[i] = FAILED;
         }
       }
     };
 
-    const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+    await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
 
-    await Promise.all(workers);
-
-    return results.filter((item): item is R => item !== undefined);
+    return results.filter((r): r is R => r !== FAILED);
   }
 
   private parseDate(value?: string): Date {
-    if (!value) {
-      return new Date();
-    }
-
+    if (!value) return new Date();
     const date = new Date(value);
-
     return Number.isNaN(date.getTime()) ? new Date() : date;
   }
 }
