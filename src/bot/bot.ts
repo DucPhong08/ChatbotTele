@@ -8,12 +8,10 @@ import { registerStartCommand } from "./commands/start.command";
 import { registerStatsCommand } from "./commands/stats.command";
 import { registerStopCommand } from "./commands/stop.command";
 import { registerSyncCommand } from "./commands/sync.command";
+import { registerFeedCommands } from "./commands/feed.command";
 import { handleBotError } from "./middlewares/error.middleware";
 
-export function createBot(
-  newsService: NewsService,
-  newsCollector: NewsCollector,
-): Bot {
+export function createBot(newsService: NewsService, newsCollector: NewsCollector): Bot {
   const bot = new Bot(env.botToken);
 
   registerStartCommand(bot, newsService);
@@ -22,8 +20,8 @@ export function createBot(
   registerSyncCommand(bot, newsCollector);
   registerPingCommand(bot);
   registerStatsCommand(bot);
+  registerFeedCommands(bot);
   bot.catch(handleBotError);
 
   return bot;
 }
-

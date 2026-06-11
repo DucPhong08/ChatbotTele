@@ -3,8 +3,12 @@ import { NewsService } from "./news.service";
 import { type CreateNewsInput, type NewsView } from "../types/news";
 import { NewsModel } from "./news.model";
 import { AIService } from "../ai/ai.service";
+import { env } from "../config/env";
+import { feeds as devFeeds } from "./feed/feeds-dev.config";
+import { feeds as mxhFeeds } from "./feed/feeds-mxh.config";
+import { FeedModel } from "./feed.model";
 
-import { feeds } from "./feed/feeds-dev.config";
+const feeds = env.feedSource === "mxh" ? mxhFeeds : devFeeds;
 
 type RssFeed = Record<string, unknown>;
 
@@ -33,7 +37,27 @@ export class NewsCollector {
     const collectedItems: CreateNewsInput[] = [];
     const seenUrls = new Set<string>();
 
-    for (const feed of feeds) {
+    const count = await FeedModel.countDocuments();
+    if (count === 0) {
+      console.log(
+        `[NewsCollector] CSDL chưa có feed nào. Tiến hành nạp ${feeds.length} feed tĩnh từ cấu hình.`,
+      );
+      const activeFeedsToInsert = feeds.map((f) => ({
+        source: f.source,
+        url: f.url,
+        category: f.category,
+        skills: f.skills,
+        isActive: true,
+      }));
+      await FeedModel.insertMany(activeFeedsToInsert).catch((err) => {
+        console.error("Lỗi khi nạp feed tĩnh vào database:", err);
+      });
+    }
+
+    const activeFeeds = await FeedModel.find({ isActive: true });
+    console.log(`[NewsCollector] Bắt đầu quét tin từ ${activeFeeds.length} nguồn đang hoạt động.`);
+
+    for (const feed of activeFeeds) {
       try {
         const now = Date.now();
         const lastFetch = this.lastFetchTimes.get(feed.url) || 0;

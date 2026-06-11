@@ -100,12 +100,14 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
         "<b>CÁC LỆNH DÀNH CHO BẠN:</b>\n" +
         "- <code>/news</code> - Xem 5 bài viết mới nhất.\n" +
         "- <code>/news [trang]</code> - Xem tin ở các trang tiếp theo (ví dụ: <code>/news 2</code>).\n" +
+        "- <code>/submitfeed [url_rss]</code> - Đề xuất thêm nguồn tin mới cho Bot theo dõi.\n" +
         "- <code>/stop</code> - Hủy nhận tin tức tự động.\n" +
         "- <code>/start</code> - Đăng ký lại và hiển thị hướng dẫn này.";
 
       if (isAdmin) {
         welcomeMessage +=
           "\n\n<b>CÁC LỆNH DÀNH CHO ADMIN:</b>\n" +
+          "- <code>/addfeed [url_rss]</code> - Thêm và giám sát trực tiếp một nguồn tin RSS mới.\n" +
           "- <code>/sync</code> - Quét nguồn tin tức mới và phát sóng (broadcast) ngay lập tức.\n" +
           "- <code>/stats</code> - Xem thống kê hệ thống (tổng số bài viết, subscriber, model AI, môi trường).\n" +
           "- <code>/ping</code> - Kiểm tra trạng thái hoạt động của bot và môi trường.";

@@ -107,5 +107,6 @@ export const env = {
   openrouterApiKey: process.env.OPENROUTER_API_KEY?.trim() || "",
   openrouterModel: process.env.OPENROUTER_MODEL?.trim() || "google/gemini-2.5-flash:free",
   openrouterFallbackModel: process.env.OPENROUTER_FALLBACK_MODEL?.trim() || "",
+  rsshubUrl: process.env.RSSHUB_URL?.trim() || "http://localhost:1200",
+  feedSource: process.env.FEED_SOURCE?.trim() || "dev",
 };
-
