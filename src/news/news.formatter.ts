@@ -10,25 +10,32 @@ export function escapeHtml(text: string): string {
 export const hasVietnamese = (text: string): boolean =>
   /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
 
-export function formatNewsList(items: NewsView[], botUsername: string): string {
+export function formatNewsList(items: NewsView[], botUsername: string, startIndex = 1): string {
   if (items.length === 0) {
     return "Chưa có tin tức nào được lưu. Vui lòng đợi tiến trình thu thập tin chạy.";
   }
 
-  return items
+  const page = Math.floor((startIndex - 1) / 10) + 1;
+  const header = `<b>DANH SÁCH TIN TỨC MỚI NHẤT (Trang ${page})</b>\n\n`;
+
+  const body = items
     .map((item, index) => {
       let cleanSummary = item.summary ? item.summary.trim() : "";
-      if (cleanSummary.length > 200) {
-        cleanSummary = cleanSummary.slice(0, 200).trim() + "...";
+      if (cleanSummary.length > 300) {
+        cleanSummary = cleanSummary.slice(0, 300).trim() + "...";
       }
-      const summaryText = cleanSummary ? `\n<i>${escapeHtml(cleanSummary)}</i>` : "";
       const detailLink = `https://t.me/${botUsername}?start=detail_${item._id?.toString() || ""}`;
       return [
-        `<b>${index + 1}. <a href="${detailLink}">${escapeHtml(item.title)}</a></b>${summaryText}`,
-        `Nguồn: ${item.source} | <a href="${item.url}">Đọc bài viết gốc</a>`,
-      ].join("\n");
+        `<b>${startIndex + index}. <a href="${detailLink}">${escapeHtml(item.title)}</a></b>`,
+        cleanSummary ? `<i>${escapeHtml(cleanSummary)}</i>` : "",
+        `Nguồn: ${item.source} | <a href="${item.url}">Đọc bài viết gốc tại nguồn</a>`,
+      ]
+        .filter(Boolean)
+        .join("\n");
     })
     .join("\n\n");
+
+  return header + body;
 }
 
 export function formatNewsDetail(item: NewsView): string {
@@ -64,8 +71,8 @@ export function formatArticlesBatch(articles: NewsView[], botUsername: string): 
       const detailLink = `https://t.me/${botUsername}?start=detail_${article._id?.toString() || ""}`;
       return [
         `<b>${index + 1}. <a href="${detailLink}">${escapeHtml(article.title)}</a></b>`,
-        cleanSummary ? `\n<i>${escapeHtml(cleanSummary)}</i>` : "",
-        `<i>Nguồn: ${article.source}</i> | <a href="${article.url}">Đọc bài viết gốc tại nguồn</a>`,
+        cleanSummary ? `<i>${escapeHtml(cleanSummary)}</i>` : "",
+        `Nguồn: ${article.source} | <a href="${article.url}">Đọc bài viết gốc tại nguồn</a>`,
       ]
         .filter(Boolean)
         .join("\n");

@@ -21,6 +21,17 @@ export function registerStatsCommand(bot: Bot<Context>): void {
         SubscriberModel.countDocuments(),
       ]);
 
+      let activeModel = "Không rõ";
+      if (env.aiProvider === "gemini") {
+        activeModel = env.geminiModel;
+      } else if (env.aiProvider === "openai") {
+        activeModel = env.openaiModel;
+      } else if (env.aiProvider === "groq") {
+        activeModel = env.groqModel;
+      } else if (env.aiProvider === "openrouter") {
+        activeModel = env.openrouterModel;
+      }
+
       const statsText = [
         "<b>THỐNG KÊ BOT</b>",
         "━━━━━━━━━━━━━━━━━━━━",
@@ -28,6 +39,7 @@ export function registerStatsCommand(bot: Bot<Context>): void {
         `Bài mới trong 24h qua: ${last24h}`,
         `Subscriber đăng ký: ${subscriberCount}`,
         `AI Provider chính: ${env.aiProvider}`,
+        `AI Model đang dùng: <code>${activeModel}</code>`,
         `Môi trường: ${process.env.APP_ENV || "local"}`,
         "━━━━━━━━━━━━━━━━━━━━",
       ].join("\n");

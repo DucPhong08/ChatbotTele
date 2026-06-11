@@ -106,5 +106,6 @@ export const env = {
   groqModel: process.env.GROQ_MODEL?.trim() || "llama-3.3-70b-versatile",
   openrouterApiKey: process.env.OPENROUTER_API_KEY?.trim() || "",
   openrouterModel: process.env.OPENROUTER_MODEL?.trim() || "google/gemini-2.5-flash:free",
+  openrouterFallbackModel: process.env.OPENROUTER_FALLBACK_MODEL?.trim() || "",
 };
 

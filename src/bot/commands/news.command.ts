@@ -9,24 +9,29 @@ export function registerNewsCommand(
   bot: Bot<Context>,
   newsService: NewsService,
 ): void {
-  // Lệnh /news hiển thị danh sách 10 tin tức mới nhất kèm bàn phím chọn chi tiết
+  // Lệnh /news hiển thị danh sách 5 tin tức mới nhất, hỗ trợ /news [page] để xem các trang tiếp theo
   bot.command("news", async (ctx) => {
     try {
-      const latestNews = await newsService.getLatest(10);
-
-      const keyboard = new InlineKeyboard();
-      if (latestNews.length > 0) {
-        latestNews.forEach((item, index) => {
-          keyboard.text(`Tóm tắt ${index + 1}`, `detail_${item._id?.toString() || ""}`);
-          if ((index + 1) % 5 === 0) {
-            keyboard.row();
-          }
-        });
+      const args = String(ctx.match || "").trim();
+      let page = 1;
+      if (args) {
+        const parsed = parseInt(args, 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          page = parsed;
+        }
       }
 
-      await ctx.reply(formatNewsList(latestNews, ctx.me.username), {
+      const limit = 5;
+      const skip = (page - 1) * limit;
+      const latestNews = await newsService.getLatest(limit, skip);
+
+      if (latestNews.length === 0) {
+        await ctx.reply(`Không tìm thấy tin tức nào ở Trang ${page}.`);
+        return;
+      }
+
+      await ctx.reply(formatNewsList(latestNews, ctx.me.username, skip + 1), {
         parse_mode: "HTML",
-        reply_markup: keyboard,
       });
     } catch (error) {
       console.error("Lỗi khi xử lý lệnh /news:", error);
@@ -167,22 +172,11 @@ export function registerNewsCommand(
   // Xử lý khi click quay lại danh sách
   bot.callbackQuery("back_to_list", async (ctx) => {
     try {
-      const latestNews = await newsService.getLatest(10);
+      const latestNews = await newsService.getLatest(5);
       const message = formatNewsList(latestNews, ctx.me.username);
-
-      const keyboard = new InlineKeyboard();
-      if (latestNews.length > 0) {
-        latestNews.forEach((item, index) => {
-          keyboard.text(`Tóm tắt ${index + 1}`, `detail_${item._id?.toString() || ""}`);
-          if ((index + 1) % 5 === 0) {
-            keyboard.row();
-          }
-        });
-      }
 
       await ctx.editMessageText(message, {
         parse_mode: "HTML",
-        reply_markup: keyboard,
       });
       await ctx.answerCallbackQuery();
     } catch (error) {

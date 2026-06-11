@@ -11,11 +11,15 @@ export function registerStartCommand(
 ): void {
   bot.command("start", async (ctx) => {
     const chatId = ctx.chat.id;
-    const parameter = ctx.match;
+    const parameter = String(ctx.match || "").trim();
 
     // Nếu start đi kèm tham số detail_[newsId] (người dùng click vào tiêu đề)
-    if (parameter && parameter.startsWith("detail_")) {
+    if (parameter.startsWith("detail_")) {
       const newsId = parameter.replace("detail_", "");
+      if (!newsId) {
+        await ctx.reply("Không tìm thấy bài viết này (liên kết cũ không chứa mã ID). Vui lòng gõ lệnh /news để lấy danh sách mới và thử lại.");
+        return;
+      }
       try {
         const item = await newsService.getById(newsId);
         if (!item) {

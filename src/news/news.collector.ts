@@ -1,6 +1,6 @@
 import Parser from "rss-parser";
 import { NewsService } from "./news.service";
-import { type CreateNewsInput } from "../types/news";
+import { type CreateNewsInput, type NewsView } from "../types/news";
 import { NewsModel } from "./news.model";
 import { AIService } from "../ai/ai.service";
 
@@ -29,7 +29,7 @@ export class NewsCollector {
 
   constructor(private readonly newsService: NewsService) {}
 
-  async collect(): Promise<CreateNewsInput[]> {
+  async collect(): Promise<NewsView[]> {
     const collectedItems: CreateNewsInput[] = [];
     const seenUrls = new Set<string>();
 
@@ -119,7 +119,17 @@ export class NewsCollector {
     }
 
     await this.newsService.createManyIfNotExists(collectedItems);
-    return collectedItems;
+
+    if (collectedItems.length === 0) {
+      return [];
+    }
+
+    const urls = collectedItems.map((item) => item.url);
+    const savedArticles = await NewsModel.find({ url: { $in: urls } })
+      .lean<NewsView[]>()
+      .exec();
+
+    return savedArticles;
   }
 
   /**

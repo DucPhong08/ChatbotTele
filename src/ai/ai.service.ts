@@ -159,9 +159,20 @@ export class AIService {
               "https://api.groq.com/openai/v1/chat/completions", env.groqApiKey, env.groqModel, prompt, SUMMARIZE_PROMPT);
             break;
           case "openrouter":
-            rawResult = await this.callChatCompletion(
-              "https://openrouter.ai/api/v1/chat/completions", env.openrouterApiKey, env.openrouterModel, prompt, SUMMARIZE_PROMPT,
-              { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" });
+            try {
+              rawResult = await this.callChatCompletion(
+                "https://openrouter.ai/api/v1/chat/completions", env.openrouterApiKey, env.openrouterModel, prompt, SUMMARIZE_PROMPT,
+                { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" });
+            } catch (error) {
+              if (env.openrouterFallbackModel && env.openrouterFallbackModel !== env.openrouterModel) {
+                console.warn(`[Summarize OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`);
+                rawResult = await this.callChatCompletion(
+                  "https://openrouter.ai/api/v1/chat/completions", env.openrouterApiKey, env.openrouterFallbackModel, prompt, SUMMARIZE_PROMPT,
+                  { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" });
+              } else {
+                throw error;
+              }
+            }
             break;
           case "gemini":
           default:
@@ -385,14 +396,30 @@ export class AIService {
             );
             break;
           case "openrouter":
-            rawResult = await this.callChatCompletion(
-              "https://openrouter.ai/api/v1/chat/completions",
-              env.openrouterApiKey,
-              env.openrouterModel,
-              batchPrompt,
-              TECH_NEWS_PROMPT,
-              { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" },
-            );
+            try {
+              rawResult = await this.callChatCompletion(
+                "https://openrouter.ai/api/v1/chat/completions",
+                env.openrouterApiKey,
+                env.openrouterModel,
+                batchPrompt,
+                TECH_NEWS_PROMPT,
+                { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" },
+              );
+            } catch (error) {
+              if (env.openrouterFallbackModel && env.openrouterFallbackModel !== env.openrouterModel) {
+                console.warn(`[AI Batch OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`);
+                rawResult = await this.callChatCompletion(
+                  "https://openrouter.ai/api/v1/chat/completions",
+                  env.openrouterApiKey,
+                  env.openrouterFallbackModel,
+                  batchPrompt,
+                  TECH_NEWS_PROMPT,
+                  { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" },
+                );
+              } else {
+                throw error;
+              }
+            }
             break;
           case "gemini":
           default:
@@ -732,7 +759,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       throw new Error("OPENROUTER_API_KEY chưa được cấu hình.");
     }
 
-    try {
+    const callWithModel = async (modelName: string) => {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -742,7 +769,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
           "X-Title": "Chatbot News Telegram",
         },
         body: JSON.stringify({
-          model: env.openrouterModel,
+          model: modelName,
           messages: [
             {
               role: "system",
@@ -773,8 +800,20 @@ ${JSON.stringify(articlesJson, null, 2)}`;
 
       const result = JSON.parse(choiceContent) as unknown;
       return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
+    };
+
+    try {
+      return await callWithModel(env.openrouterModel);
     } catch (error) {
-      console.error(`Lỗi khi xử lý bài viết bằng OpenRouter (${env.openrouterModel}):`, error);
+      if (env.openrouterFallbackModel && env.openrouterFallbackModel !== env.openrouterModel) {
+        console.warn(`[OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`);
+        try {
+          return await callWithModel(env.openrouterFallbackModel);
+        } catch (fallbackError) {
+          console.error(`[OpenRouter] Thất bại với cả fallback model ${env.openrouterFallbackModel}:`, fallbackError);
+          throw fallbackError;
+        }
+      }
       throw error;
     }
   }
@@ -803,12 +842,22 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       ? baseline.importanceScore
       : this.clampScore(aiScore, baseline.importanceScore - 25, baseline.importanceScore + 25);
 
-    // AI trả tiếng Anh (field "title" và "summary"), giữ nguyên để dịch sau
-    let summaryEn = typeof raw.summary === "string" ? raw.summary.trim() : "";
-    if (!summaryEn || summaryEn.toLowerCase().includes("article url:") || summaryEn.startsWith("http")) {
-      summaryEn = this.truncate(this.cleanContent(content), 300) || "No detailed description available.";
+    // AI trả trường summary (có thể là array các gạch đầu dòng hoặc string đơn lẻ)
+    let summaryStr = "";
+    if (Array.isArray(raw.summary)) {
+      summaryStr = raw.summary
+        .map((s) => String(s).trim())
+        .filter(Boolean)
+        .map((s) => (s.startsWith("-") || s.startsWith("*") ? s : `- ${s}`))
+        .join("\n");
+    } else if (typeof raw.summary === "string") {
+      summaryStr = raw.summary.trim();
+    }
+
+    if (!summaryStr || summaryStr.toLowerCase().includes("article url:") || summaryStr.startsWith("http")) {
+      summaryStr = this.truncate(this.cleanContent(content), 300) || "No detailed description available.";
     } else {
-      summaryEn = this.truncate(summaryEn, 300);
+      summaryStr = this.truncate(summaryStr, 600);
     }
 
     let titleEn = typeof raw.title === "string" && raw.title.trim()
@@ -827,7 +876,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
 
     return {
       titleVi: titleEn,
-      summaryVi: summaryEn,
+      summaryVi: summaryStr,
       category,
       tags,
       importanceScore,

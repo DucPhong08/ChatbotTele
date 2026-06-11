@@ -1,3 +1,4 @@
+import { isValidObjectId } from "mongoose";
 import { NewsModel } from "./news.model";
 import { type CreateNewsInput, type NewsView } from "../types/news";
 
@@ -20,10 +21,11 @@ export class NewsService {
     return result.upsertedCount;
   }
 
-  async getLatest(limit = 10): Promise<NewsView[]> {
+  async getLatest(limit = 10, skip = 0): Promise<NewsView[]> {
+    const fetchLimit = Math.max(100, limit + skip);
     const latestItems = await NewsModel.find()
       .sort({ publishedAt: -1 })
-      .limit(30)
+      .limit(fetchLimit)
       .lean<NewsView[]>()
       .exec();
 
@@ -36,10 +38,13 @@ export class NewsService {
       return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
     });
 
-    return sorted.slice(0, limit);
+    return sorted.slice(skip, skip + limit);
   }
 
   async getById(id: string): Promise<NewsView | null> {
+    if (!isValidObjectId(id)) {
+      return null;
+    }
     return NewsModel.findById(id).lean<NewsView>().exec();
   }
 }
