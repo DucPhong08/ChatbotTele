@@ -9,7 +9,9 @@ export function registerStopCommand(bot: Bot<Context>): void {
       const result = await SubscriberModel.deleteOne({ chatId });
 
       if (result.deletedCount > 0) {
-        await ctx.reply("Bạn đã hủy nhận tin tự động thành công. Dùng /start để đăng ký lại khi cần.");
+        await ctx.reply(
+          "Bạn đã hủy nhận tin tự động thành công. Dùng /start để đăng ký lại khi cần.",
+        );
         return;
       }
 
