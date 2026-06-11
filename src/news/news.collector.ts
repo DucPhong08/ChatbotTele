@@ -4,7 +4,7 @@ import { type CreateNewsInput, type NewsView } from "../types/news";
 import { NewsModel } from "./news.model";
 import { AIService } from "../ai/ai.service";
 
-import { feeds } from "./feeds.config";
+import { feeds } from "./feed/feeds-dev.config";
 
 type RssFeed = Record<string, unknown>;
 
@@ -61,8 +61,7 @@ export class NewsCollector {
             return {
               title,
               url,
-              content:
-                item.contentSnippet?.trim() || item.content?.trim() || "",
+              content: item.contentSnippet?.trim() || item.content?.trim() || "",
               publishedAt: this.parseDate(item.isoDate || item.pubDate),
             };
           })
@@ -111,10 +110,7 @@ export class NewsCollector {
           }
         }
       } catch (error) {
-        console.error(
-          `Thất bại khi thu thập dữ liệu RSS feed từ: ${feed.source}`,
-          error,
-        );
+        console.error(`Thất bại khi thu thập dữ liệu RSS feed từ: ${feed.source}`, error);
       }
     }
 
@@ -156,10 +152,7 @@ export class NewsCollector {
       }
     };
 
-    const workers = Array.from(
-      { length: Math.min(concurrency, items.length) },
-      () => worker(),
-    );
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
     await Promise.all(workers);
     return results;
   }

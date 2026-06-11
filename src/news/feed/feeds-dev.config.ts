@@ -1,4 +1,4 @@
-import { type FeedConfig } from "../types/feed";
+import { type FeedConfig } from "../../types/feed";
 
 export const feeds: FeedConfig[] = [
   // Tổng hợp tin dev
