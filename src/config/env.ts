@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export type TelegramMode = "polling" | "webhook";
+export type AiProvider = "gemini" | "openai" | "groq";
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -24,6 +25,16 @@ function readTelegramMode(): TelegramMode {
   return mode;
 }
 
+function readAiProvider(): AiProvider {
+  const provider = process.env.AI_PROVIDER?.trim() || "gemini";
+
+  if (provider !== "gemini" && provider !== "openai" && provider !== "groq") {
+    throw new Error("AI_PROVIDER phải là gemini, openai hoặc groq");
+  }
+
+  return provider;
+}
+
 function readPort(): number {
   const rawPort = process.env.PORT?.trim() || "3000";
   const port = Number(rawPort);
@@ -33,6 +44,25 @@ function readPort(): number {
   }
 
   return port;
+}
+
+function readAdminChatIds(): number[] {
+  const rawIds = process.env.ADMIN_CHAT_IDS?.trim();
+
+  if (!rawIds) {
+    return [];
+  }
+
+  return rawIds.split(",").map((rawId) => {
+    const value = rawId.trim();
+    const chatId = Number(value);
+
+    if (!value || !Number.isSafeInteger(chatId)) {
+      throw new Error("ADMIN_CHAT_IDS phải là danh sách chat id hợp lệ, phân tách bằng dấu phẩy");
+    }
+
+    return chatId;
+  });
 }
 
 const telegramMode = readTelegramMode();
@@ -49,7 +79,8 @@ export const env = {
   webhookUrl,
   port: readPort(),
   newsCron: process.env.NEWS_CRON?.trim() || "*/30 * * * *",
-  aiProvider: (process.env.AI_PROVIDER?.trim() || "gemini") as "gemini" | "openai" | "groq",
+  aiProvider: readAiProvider(),
+  adminChatIds: readAdminChatIds(),
   geminiApiKey: process.env.GEMINI_API_KEY?.trim() || "",
   geminiModel: process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash",
   openaiApiKey: process.env.OPENAI_API_KEY?.trim() || "",
