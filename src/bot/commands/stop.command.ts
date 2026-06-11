@@ -17,9 +17,12 @@ export function registerStopCommand(bot: Bot<Context>): void {
     const isEn = lang === "en";
 
     try {
-      const result = await SubscriberModel.deleteOne({ chatId });
+      const result = await SubscriberModel.updateOne(
+        { chatId, isActiveAI: { $ne: false } },
+        { isActiveAI: false },
+      );
 
-      if (result.deletedCount > 0) {
+      if (result.modifiedCount > 0) {
         await ctx.reply(
           isEn
             ? "You have successfully unsubscribed from automated news. Use /start to subscribe again."

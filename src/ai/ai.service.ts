@@ -155,6 +155,26 @@ const KEYWORD_RULES: KeywordRule[] = [
 ];
 
 export class AIService {
+  private static async fetchWithTimeout(
+    url: string,
+    options: RequestInit,
+    timeoutMs = 8000,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      clearTimeout(id);
+      throw error;
+    }
+  }
+
   public static async translateWithGoogle(
     text: string,
     targetLang: "vi" | "en" = "vi",
@@ -166,7 +186,7 @@ export class AIService {
     try {
       console.log(`[Google Translate] Đang dịch sang ${targetLang}: "${text.slice(0, 50)}..."`);
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
-      const res = await fetch(url);
+      const res = await this.fetchWithTimeout(url, {}, 5000);
 
       if (!res.ok) {
         throw new Error(`Google Translate status: ${res.status}`);
@@ -911,23 +931,27 @@ ${JSON.stringify(articlesJson, null, 2)}`;
   ): Promise<unknown> {
     if (!apiKey) throw new Error(`API key chưa được cấu hình cho ${endpoint}`);
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        ...extraHeaders,
+    const response = await this.fetchWithTimeout(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+          ...extraHeaders,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+        }),
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.3,
-      }),
-    });
+      8000,
+    );
 
     if (!response.ok) {
       const errText = await response.text();
@@ -943,7 +967,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
   private static async callGeminiBatch(prompt: string): Promise<unknown> {
     if (!env.geminiApiKey) throw new Error("GEMINI_API_KEY chưa được cấu hình.");
 
-    const response = await fetch(
+    const response = await this.fetchWithTimeout(
       `https://generativelanguage.googleapis.com/v1beta/models/${env.geminiModel}:generateContent?key=${env.geminiApiKey}`,
       {
         method: "POST",
@@ -956,6 +980,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
           },
         }),
       },
+      8000,
     );
 
     if (!response.ok) {
@@ -1002,7 +1027,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     }
 
     try {
-      const response = await fetch(
+      const response = await this.fetchWithTimeout(
         `https://generativelanguage.googleapis.com/v1beta/models/${env.geminiModel}:generateContent?key=${env.geminiApiKey}`,
         {
           method: "POST",
@@ -1103,7 +1128,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     }
 
     try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await this.fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1159,28 +1184,31 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     }
 
     try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${env.groqApiKey}`,
+      const response = await this.fetchWithTimeout(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${env.groqApiKey}`,
+          },
+          body: JSON.stringify({
+            model: env.groqModel,
+            messages: [
+              {
+                role: "system",
+                content: TECH_NEWS_PROMPT,
+              },
+              {
+                role: "user",
+                content: JSON.stringify({ title, content, source, url }),
+              },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+          }),
         },
-        body: JSON.stringify({
-          model: env.groqModel,
-          messages: [
-            {
-              role: "system",
-              content: TECH_NEWS_PROMPT,
-            },
-            {
-              role: "user",
-              content: JSON.stringify({ title, content, source, url }),
-            },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.3,
-        }),
-      });
+      );
 
       if (!response.ok) {
         const errText = await response.text();
@@ -1215,30 +1243,33 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     }
 
     const callWithModel = async (modelName: string) => {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${env.openrouterApiKey}`,
-          "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
-          "X-Title": "Chatbot News Telegram",
+      const response = await this.fetchWithTimeout(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${env.openrouterApiKey}`,
+            "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+            "X-Title": "Chatbot News Telegram",
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              {
+                role: "system",
+                content: TECH_NEWS_PROMPT,
+              },
+              {
+                role: "user",
+                content: this.buildArticlePrompt(title, content, source, url),
+              },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+          }),
         },
-        body: JSON.stringify({
-          model: modelName,
-          messages: [
-            {
-              role: "system",
-              content: TECH_NEWS_PROMPT,
-            },
-            {
-              role: "user",
-              content: this.buildArticlePrompt(title, content, source, url),
-            },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.3,
-        }),
-      });
+      );
 
       if (!response.ok) {
         const errText = await response.text();

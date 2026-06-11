@@ -41,7 +41,9 @@ export function startCollectNewsJob(
         const topNew = sortedNew.slice(0, 5);
 
         // Lấy tất cả người dùng đã đăng ký nhận tin
-        const subscribers = await SubscriberModel.find().lean().exec();
+        const subscribers = await SubscriberModel.find({ isActiveAI: { $ne: false } })
+          .lean()
+          .exec();
 
         if (subscribers.length > 0) {
           console.log(`Đang gửi tự động tin tức mới tới ${subscribers.length} người dùng...`);
@@ -116,9 +118,9 @@ export function startCollectNewsJob(
                 err?.code === 403;
               if (isBlocked) {
                 console.log(
-                  `[Auto-cleanup] Đang xóa subscriber đã chặn bot hoặc chat không tồn tại: ${sub.chatId}`,
+                  `[Auto-cleanup] Đang đánh dấu subscriber đã chặn bot làm không hoạt động: ${sub.chatId}`,
                 );
-                await SubscriberModel.deleteOne({ chatId: sub.chatId });
+                await SubscriberModel.updateOne({ chatId: sub.chatId }, { isActiveAI: false });
               }
             }
           }

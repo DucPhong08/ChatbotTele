@@ -146,7 +146,20 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
     try {
       // Đăng ký nhận tin bằng cách lưu chatId vào database
       if (!sub) {
-        sub = await SubscriberModel.create({ chatId, language: "vi" });
+        sub = await SubscriberModel.create({
+          chatId,
+          language: "vi",
+          username: ctx.from?.username || "",
+          firstName: ctx.from?.first_name || "",
+          lastName: ctx.from?.last_name || "",
+          isActiveAI: true,
+        });
+      } else {
+        sub.username = ctx.from?.username || "";
+        sub.firstName = ctx.from?.first_name || "";
+        sub.lastName = ctx.from?.last_name || "";
+        sub.isActiveAI = true;
+        await sub.save();
       }
 
       const isEn = lang === "en";
@@ -189,6 +202,30 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
             : "");
 
       await ctx.reply(welcomeMessage, { parse_mode: "HTML" });
+
+      // Nếu chưa có số điện thoại, hỏi xin số điện thoại để hoàn tất đăng ký
+      if (!sub.phoneNumber) {
+        const requestKeyboard = {
+          keyboard: [
+            [
+              {
+                text: isEn ? "📱 Share phone number" : "📱 Chia sẻ số điện thoại",
+                request_contact: true,
+              },
+            ],
+          ],
+          resize_keyboard: true,
+          one_time_keyboard: true,
+        };
+        await ctx.reply(
+          isEn
+            ? "To complete registration, please share your phone number by clicking the button below:"
+            : "Để hoàn tất đăng ký, vui lòng chia sẻ số điện thoại của bạn bằng cách nhấn nút bên dưới:",
+          {
+            reply_markup: requestKeyboard,
+          },
+        );
+      }
     } catch (error) {
       console.error("Lỗi khi đăng ký người dùng:", error);
       await ctx.reply(
@@ -196,6 +233,38 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
           ? "An error occurred while subscribing. Please try again later!"
           : "Đã xảy ra lỗi khi đăng ký nhận tin. Vui lòng thử lại sau!",
       );
+    }
+  });
+
+  // Lắng nghe tin nhắn contact để cập nhật số điện thoại
+  bot.on("message:contact", async (ctx) => {
+    const contact = ctx.message.contact;
+    const chatId = ctx.chat.id;
+
+    if (contact.user_id !== ctx.from?.id) {
+      await ctx.reply("Vui lòng chỉ chia sẻ số điện thoại của chính bạn.");
+      return;
+    }
+
+    try {
+      const sub = await SubscriberModel.findOne({ chatId });
+      if (sub) {
+        sub.phoneNumber = contact.phone_number;
+        await sub.save();
+
+        const lang = sub.language || "vi";
+        await ctx.reply(
+          lang === "en"
+            ? "✅ Phone number updated successfully! Thank you."
+            : "✅ Đã cập nhật số điện thoại thành công! Cảm ơn bạn.",
+          {
+            reply_markup: { remove_keyboard: true },
+          },
+        );
+      }
+    } catch (error) {
+      console.error("Lỗi khi lưu số điện thoại:", error);
+      await ctx.reply("Đã xảy ra lỗi khi lưu số điện thoại. Vui lòng thử lại!");
     }
   });
 }

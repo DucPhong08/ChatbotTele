@@ -53,7 +53,9 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
       );
 
       // Lấy danh sách người đăng ký nhận tin
-      const subscribers = await SubscriberModel.find().lean().exec();
+      const subscribers = await SubscriberModel.find({ isActiveAI: { $ne: false } })
+        .lean()
+        .exec();
       if (subscribers.length > 0) {
         for (const sub of subscribers) {
           try {
@@ -111,9 +113,9 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
               err?.code === 403;
             if (isBlocked) {
               console.log(
-                `[Auto-cleanup] Đang xóa subscriber đã chặn bot hoặc chat không tồn tại: ${sub.chatId}`,
+                `[Auto-cleanup] Đang đánh dấu subscriber đã chặn bot làm không hoạt động: ${sub.chatId}`,
               );
-              await SubscriberModel.deleteOne({ chatId: sub.chatId });
+              await SubscriberModel.updateOne({ chatId: sub.chatId }, { isActiveAI: false });
             }
           }
         }

@@ -18,7 +18,7 @@ export function registerStatsCommand(bot: Bot<Context>): void {
         NewsModel.countDocuments({
           createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
         }),
-        SubscriberModel.countDocuments(),
+        SubscriberModel.countDocuments({ isActiveAI: { $ne: false } }),
       ]);
 
       let activeModel = "Không rõ";

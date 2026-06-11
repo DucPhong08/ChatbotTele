@@ -10,6 +10,11 @@ import { fetchArticleContent } from "../../news/article.fetcher";
 import { AIService } from "../../ai/ai.service";
 import { NewsModel } from "../../news/news.model";
 import { SubscriberModel } from "../subscriber.model";
+const summaryCache = new Map<
+  string,
+  { text: string; keyboard: InlineKeyboard; timestamp: number }
+>();
+const activeSummaries = new Set<string>();
 
 export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService): void {
   // Lệnh /news hiển thị danh sách 5 tin tức mới nhất, hỗ trợ /news [page] để xem các trang tiếp theo
@@ -281,18 +286,65 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
     }
 
     const isEn = lang === "en";
+    const cacheKey = `${newsId}_${lang}`;
+
+    const cached = summaryCache.get(cacheKey);
+    if (cached) {
+      const isExpired = Date.now() - cached.timestamp > 5 * 60 * 1000;
+      if (!isExpired) {
+        await ctx
+          .editMessageText(cached.text, {
+            parse_mode: "HTML",
+            reply_markup: cached.keyboard,
+            link_preview_options: { is_disabled: true },
+          })
+          .catch(() => {});
+        await ctx.answerCallbackQuery().catch(() => {});
+        return;
+      } else {
+        summaryCache.delete(cacheKey);
+      }
+    }
+
+    if (activeSummaries.has(cacheKey)) {
+      await ctx
+        .answerCallbackQuery({
+          text: isEn ? "Summary is already generating..." : "Đang tiến hành tóm tắt rồi...",
+        })
+        .catch(() => {});
+      return;
+    }
+
+    activeSummaries.add(cacheKey);
 
     try {
-      await ctx.answerCallbackQuery({
-        text: isEn ? "Summarizing article..." : "Đang tóm tắt bài viết...",
-      });
-      await ctx.replyWithChatAction("typing");
+      await ctx
+        .answerCallbackQuery({
+          text: isEn ? "Summarizing article..." : "Đang tóm tắt bài viết...",
+        })
+        .catch(() => {});
+
+      // Edit message to loading text immediately
+      const loadingText = isEn
+        ? "⏳ <i>Summarizing article with AI, please wait...</i>"
+        : "⏳ <i>Đang tóm tắt bài viết bằng AI, vui lòng chờ trong giây lát...</i>";
+      await ctx
+        .editMessageText(loadingText, {
+          parse_mode: "HTML",
+        })
+        .catch(() => {});
+
+      await ctx.replyWithChatAction("typing").catch(() => {});
 
       const item = await newsService.getById(newsId);
       if (!item) {
-        await ctx.answerCallbackQuery({
-          text: isEn ? "Article not found." : "Không tìm thấy bài viết.",
-        });
+        const backLabel = isEn ? "🔙 Details" : "🔙 Chi tiết";
+        const keyboard = new InlineKeyboard().text(backLabel, `detail_${newsId}`);
+        await ctx
+          .editMessageText(isEn ? "Article not found." : "Không tìm thấy bài viết.", {
+            reply_markup: keyboard,
+          })
+          .catch(() => {});
         return;
       }
 
@@ -303,11 +355,13 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         const errMsg = isEn
           ? `<b>ARTICLE SUMMARY</b>\n────────────────\nCould not fetch original article content.\nPlease read directly at: <a href="${item.url}">original link</a>`
           : `<b>TÓM TẮT BÀI VIẾT</b>\n────────────────\nKhông thể truy cập nội dung bài viết từ nguồn gốc.\nVui lòng đọc trực tiếp tại: <a href="${item.url}">link gốc</a>`;
-        await ctx.editMessageText(errMsg, {
-          parse_mode: "HTML",
-          reply_markup: keyboard,
-          link_preview_options: { is_disabled: true },
-        });
+        await ctx
+          .editMessageText(errMsg, {
+            parse_mode: "HTML",
+            reply_markup: keyboard,
+            link_preview_options: { is_disabled: true },
+          })
+          .catch(() => {});
         return;
       }
 
@@ -369,11 +423,16 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         .text(labels.detailBtn, `detail_${newsId}`)
         .text(labels.listBtn, "back_to_list");
 
-      await ctx.editMessageText(summaryText, {
-        parse_mode: "HTML",
-        reply_markup: keyboard,
-        link_preview_options: { is_disabled: true },
-      });
+      // Save to cache
+      summaryCache.set(cacheKey, { text: summaryText, keyboard, timestamp: Date.now() });
+
+      await ctx
+        .editMessageText(summaryText, {
+          parse_mode: "HTML",
+          reply_markup: keyboard,
+          link_preview_options: { is_disabled: true },
+        })
+        .catch(() => {});
     } catch (error) {
       console.error("Lỗi khi tóm tắt bài viết:", error);
       const isEn = lang === "en";
@@ -388,6 +447,8 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
           reply_markup: keyboard,
         })
         .catch(() => {});
+    } finally {
+      activeSummaries.delete(cacheKey);
     }
   });
 
