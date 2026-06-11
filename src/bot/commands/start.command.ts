@@ -172,6 +172,7 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
           `- /category <code>[topic]</code> - Filter categories using AI.\n` +
           `- /settings - Configure language & digest preferences.\n` +
           `- /submitfeed <code>[url]</code> - Suggest a new RSS source.\n` +
+          `- /feedback <code>[message]</code> - Send feedback to the administrators.\n` +
           `- /stop - Stop receiving automated news.\n` +
           `- /start - Show help guide.` +
           (env.adminChatIds.includes(chatId)
@@ -189,6 +190,7 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
           `- /category <code>[chủ đề]</code> - Lọc thể loại tin bằng AI.\n` +
           `- /settings - Cấu hình ngôn ngữ & bản tin tổng hợp.\n` +
           `- /submitfeed <code>[url]</code> - Đề xuất thêm nguồn RSS mới.\n` +
+          `- /feedback <code>[góp ý]</code> - Gửi góp ý, phản hồi cho quản trị viên.\n` +
           `- /stop - Hủy nhận tin tự động.\n` +
           `- /start - Đăng ký lại và xem hướng dẫn.` +
           (env.adminChatIds.includes(chatId)

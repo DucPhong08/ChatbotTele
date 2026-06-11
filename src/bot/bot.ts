@@ -11,6 +11,7 @@ import { registerSyncCommand } from "./commands/sync.command";
 import { registerFeedCommands } from "./commands/feed.command";
 import { registerCategoryCommand } from "./commands/category.command";
 import { registerSettingsCommand } from "./commands/settings.command";
+import { registerFeedbackCommand } from "./commands/feedback.command";
 import { handleBotError } from "./middlewares/error.middleware";
 
 export function createBot(newsService: NewsService, newsCollector: NewsCollector): Bot {
@@ -25,6 +26,7 @@ export function createBot(newsService: NewsService, newsCollector: NewsCollector
   registerFeedCommands(bot);
   registerCategoryCommand(bot);
   registerSettingsCommand(bot);
+  registerFeedbackCommand(bot);
   bot.catch(handleBotError);
 
   // Thiết lập menu Lệnh (Command Menu) tự động trên Telegram
@@ -34,6 +36,7 @@ export function createBot(newsService: NewsService, newsCollector: NewsCollector
     { command: "category", description: "Filter news topics using AI" },
     { command: "settings", description: "Configure language & digest preferences" },
     { command: "submitfeed", description: "Suggest a new RSS source" },
+    { command: "feedback", description: "Send feedback to the administrators" },
     { command: "stop", description: "Stop receiving news" },
   ]);
 
@@ -44,6 +47,7 @@ export function createBot(newsService: NewsService, newsCollector: NewsCollector
       { command: "category", description: "Lọc chủ đề tin bằng AI" },
       { command: "settings", description: "Cấu hình ngôn ngữ & nhận tin tổng hợp" },
       { command: "submitfeed", description: "Đề xuất nguồn tin RSS mới" },
+      { command: "feedback", description: "Gửi góp ý, phản hồi cho quản trị viên" },
       { command: "stop", description: "Hủy nhận tin tự động" },
     ],
     { language_code: "vi" },
@@ -58,6 +62,7 @@ export function createBot(newsService: NewsService, newsCollector: NewsCollector
         { command: "category", description: "Lọc chủ đề tin bằng AI" },
         { command: "settings", description: "Cấu hình ngôn ngữ & nhận tin tổng hợp" },
         { command: "submitfeed", description: "Đề xuất nguồn tin RSS mới" },
+        { command: "feedback", description: "Gửi góp ý, phản hồi cho quản trị viên" },
         { command: "stop", description: "Hủy nhận tin tự động" },
         // Lệnh admin
         { command: "addfeed", description: "[ADMIN] Thêm nguồn RSS ngay lập tức" },
