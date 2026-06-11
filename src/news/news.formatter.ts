@@ -7,13 +7,20 @@ export function escapeHtml(text: string): string {
 export const hasVietnamese = (text: string): boolean =>
   /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
 
-export function formatNewsList(items: NewsView[], botUsername: string, startIndex = 1): string {
+export function formatNewsList(
+  items: NewsView[],
+  botUsername: string,
+  startIndex = 1,
+  categories: string | string[] = "all",
+): string {
   if (items.length === 0) {
     return "Chưa có tin tức nào được lưu. Vui lòng đợi tiến trình thu thập tin chạy.";
   }
 
   const page = Math.floor((startIndex - 1) / 5) + 1;
-  const header = `<b>DANH SÁCH TIN TỨC MỚI NHẤT (Trang ${page})</b>\n\n`;
+  const cats = Array.isArray(categories) ? categories : [categories];
+  const categoryStr = cats.includes("all") ? "Tất cả" : cats.map((c) => c.toUpperCase()).join(", ");
+  const header = `<b>DANH SÁCH TIN TỨC MỚI NHẤT (Trang ${page} | Thể loại: ${categoryStr})</b>\n\n`;
 
   const body = items
     .map((item, index) => {
@@ -63,8 +70,16 @@ export function formatNewsDetail(item: NewsView): string {
     .join("\n");
 }
 
-export function formatArticlesBatch(articles: NewsView[], botUsername: string): string {
-  const header = "<b>TIN CÔNG NGHỆ MỚI NHẤT</b>\n\n";
+export function formatArticlesBatch(
+  articles: NewsView[],
+  botUsername: string,
+  categories: string | string[] = "all",
+): string {
+  const cats = Array.isArray(categories) ? categories : [categories];
+  const categoryStr = cats.includes("all")
+    ? ""
+    : ` (Thể loại: ${cats.map((c) => c.toUpperCase()).join(", ")})`;
+  const header = `<b>TIN CÔNG NGHỆ MỚI NHẤT${categoryStr}</b>\n\n`;
   const body = articles
     .map((article, index) => {
       let cleanSummary = article.summary ? article.summary.trim() : "";

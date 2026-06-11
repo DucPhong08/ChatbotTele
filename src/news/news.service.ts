@@ -21,9 +21,16 @@ export class NewsService {
     return result.upsertedCount;
   }
 
-  async getLatest(limit = 10, skip = 0): Promise<NewsView[]> {
+  async getLatest(limit = 10, skip = 0, categories?: string | string[]): Promise<NewsView[]> {
     const fetchLimit = Math.max(100, limit + skip);
-    const latestItems = await NewsModel.find()
+    let filter = {};
+    if (categories) {
+      const cats = Array.isArray(categories) ? categories : [categories];
+      if (cats.length > 0 && !cats.includes("all")) {
+        filter = { category: { $in: cats } };
+      }
+    }
+    const latestItems = await NewsModel.find(filter)
       .sort({ publishedAt: -1 })
       .limit(fetchLimit)
       .lean<NewsView[]>()

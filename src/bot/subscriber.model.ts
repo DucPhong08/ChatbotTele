@@ -6,6 +6,8 @@ export type SubscriberDocument = HydratedDocument<Subscriber>;
 const subscriberSchema = new Schema<Subscriber>(
   {
     chatId: { type: Number, required: true, unique: true },
+    preferredCategories: { type: [String], default: ["all"] },
+    customPrompt: { type: String, default: "" },
   },
   {
     timestamps: true,

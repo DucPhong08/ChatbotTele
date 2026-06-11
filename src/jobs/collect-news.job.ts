@@ -5,6 +5,7 @@ import { SubscriberModel } from "../bot/subscriber.model";
 import { formatArticlesBatch } from "../news/news.formatter";
 import { NewsModel } from "../news/news.model";
 import { env } from "../config/env";
+import { AIService } from "../ai/ai.service";
 
 export function startCollectNewsJob(
   collector: NewsCollector,
@@ -43,9 +44,7 @@ export function startCollectNewsJob(
         const subscribers = await SubscriberModel.find().lean().exec();
 
         if (subscribers.length > 0) {
-          console.log(
-            `Đang gửi tự động ${topNew.length} bài viết mới tới ${subscribers.length} người dùng...`,
-          );
+          console.log(`Đang gửi tự động tin tức mới tới ${subscribers.length} người dùng...`);
 
           let botUsername = bot.botInfo?.username;
           if (!botUsername) {
@@ -58,14 +57,50 @@ export function startCollectNewsJob(
             }
           }
 
-          const message = formatArticlesBatch(topNew, botUsername);
-          const keyboard = new InlineKeyboard();
-          if (topNew.length === 5) {
-            keyboard.text("Trang sau", "news_page_2");
-          }
-
           for (const sub of subscribers) {
             try {
+              const preferred =
+                sub.preferredCategories && sub.preferredCategories.length > 0
+                  ? sub.preferredCategories
+                  : ["all"];
+              let userArticles = topNew;
+
+              if (!preferred.includes("all")) {
+                const filtered = notifyArticles.filter(
+                  (a) =>
+                    a.category &&
+                    preferred.map((p) => p.toLowerCase()).includes(a.category.toLowerCase()),
+                );
+                if (filtered.length === 0) {
+                  // Không có bài mới nào thuộc thể loại ưa thích của user này
+                  continue;
+                }
+                userArticles = [...filtered]
+                  .sort((a, b) => {
+                    const scoreA = typeof a.importanceScore === "number" ? a.importanceScore : 50;
+                    const scoreB = typeof b.importanceScore === "number" ? b.importanceScore : 50;
+                    return scoreB - scoreA;
+                  })
+                  .slice(0, 5);
+              }
+
+              // Lọc bổ sung bằng AI nếu người dùng có custom prompt và không chọn "Tất cả"
+              if (sub.customPrompt && !preferred.includes("all")) {
+                userArticles = await AIService.filterArticlesByPrompt(
+                  userArticles,
+                  sub.customPrompt,
+                );
+                if (userArticles.length === 0) {
+                  continue;
+                }
+              }
+
+              const message = formatArticlesBatch(userArticles, botUsername, preferred);
+              const keyboard = new InlineKeyboard();
+              if (userArticles.length === 5) {
+                keyboard.text("Trang sau", "news_page_2");
+              }
+
               await bot.api.sendMessage(sub.chatId, message, {
                 parse_mode: "HTML",
                 reply_markup: keyboard,

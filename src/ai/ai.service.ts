@@ -1,6 +1,7 @@
 import { env, type AiProvider } from "../config/env";
 import { type AIProcessedResult, type ArticleCategory } from "../types/ai";
-import { TECH_NEWS_PROMPT, SUMMARIZE_PROMPT } from "./prompts";
+import { type NewsView } from "../types/news";
+import { TECH_NEWS_PROMPT, SUMMARIZE_PROMPT, PARSE_PREFERENCES_PROMPT } from "./prompts";
 
 export interface DetailedSummaryResult {
   title: string;
@@ -338,6 +339,285 @@ export class AIService {
       readabilityScore: 0,
       topics: ["error"],
     };
+  }
+
+  /**
+   * Phân tích câu lệnh của người dùng để trích xuất các thể loại tin tức mong muốn bằng AI.
+   */
+  static async parsePreferredCategories(userPrompt: string): Promise<string[]> {
+    if (!userPrompt.trim()) {
+      return ["all"];
+    }
+
+    const prompt = `User request: "${userPrompt}"`;
+    const primaryProvider = env.aiProvider;
+    const providersToTry: AiProvider[] = [primaryProvider];
+    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
+    for (const p of allProviders) {
+      if (p !== primaryProvider && this.isProviderConfigured(p)) {
+        providersToTry.push(p);
+      }
+    }
+
+    const systemPrompt = PARSE_PREFERENCES_PROMPT;
+
+    for (const provider of providersToTry) {
+      try {
+        console.log(`[ParsePreferences] Đang thử provider: ${provider}`);
+        let rawResult: unknown;
+        switch (provider) {
+          case "openai":
+            rawResult = await this.callChatCompletion(
+              "https://api.openai.com/v1/chat/completions",
+              env.openaiApiKey,
+              env.openaiModel,
+              prompt,
+              systemPrompt,
+            );
+            break;
+          case "groq":
+            rawResult = await this.callChatCompletion(
+              "https://api.groq.com/openai/v1/chat/completions",
+              env.groqApiKey,
+              env.groqModel,
+              prompt,
+              systemPrompt,
+            );
+            break;
+          case "openrouter":
+            rawResult = await this.callChatCompletion(
+              "https://openrouter.ai/api/v1/chat/completions",
+              env.openrouterApiKey,
+              env.openrouterModel,
+              prompt,
+              systemPrompt,
+              {
+                "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+                "X-Title": "Chatbot News Telegram",
+              },
+            );
+            break;
+          case "gemini":
+          default:
+            rawResult = await this.callGeminiBatch(`${systemPrompt}\n\n${prompt}`);
+            break;
+        }
+
+        // Kiểm tra xem kết quả trả về có phải là mảng hợp lệ không
+        if (Array.isArray(rawResult)) {
+          const validCategories = [
+            "all",
+            "ai",
+            "backend",
+            "frontend",
+            "devops",
+            "security",
+            "mobile",
+            "career",
+            "other",
+          ];
+          const result = rawResult
+            .map((item) => String(item).toLowerCase().trim())
+            .filter((item) => validCategories.includes(item));
+          if (result.length > 0) {
+            return result;
+          }
+        }
+      } catch (error) {
+        console.warn(`[ParsePreferences] Thất bại với ${provider}:`, (error as Error).message);
+      }
+    }
+
+    // Luật fallback nếu tất cả các nhà cung cấp AI đều lỗi
+    return this.parsePreferencesFallback(userPrompt);
+  }
+
+  public static parsePreferencesFallback(prompt: string): string[] {
+    const clean = prompt.toLowerCase();
+    const categories: string[] = [];
+
+    if (
+      clean.includes("ai") ||
+      clean.includes("trí tuệ nhân tạo") ||
+      clean.includes("intelligence") ||
+      clean.includes("llm") ||
+      clean.includes("gpt")
+    ) {
+      categories.push("ai");
+    }
+    if (
+      clean.includes("backend") ||
+      clean.includes("hậu kỳ") ||
+      clean.includes("database") ||
+      clean.includes("cơ sở dữ liệu") ||
+      clean.includes("api") ||
+      clean.includes("nodejs")
+    ) {
+      categories.push("backend");
+    }
+    if (
+      clean.includes("frontend") ||
+      clean.includes("giao diện") ||
+      clean.includes("web") ||
+      clean.includes("react") ||
+      clean.includes("html") ||
+      clean.includes("css")
+    ) {
+      categories.push("frontend");
+    }
+    if (
+      clean.includes("devops") ||
+      clean.includes("cloud") ||
+      clean.includes("aws") ||
+      clean.includes("docker") ||
+      clean.includes("kubernetes") ||
+      clean.includes("ci/cd")
+    ) {
+      categories.push("devops");
+    }
+    if (
+      clean.includes("security") ||
+      clean.includes("bảo mật") ||
+      clean.includes("an ninh") ||
+      clean.includes("lỗ hổng") ||
+      clean.includes("cve")
+    ) {
+      categories.push("security");
+    }
+    if (
+      clean.includes("mobile") ||
+      clean.includes("di động") ||
+      clean.includes("android") ||
+      clean.includes("ios") ||
+      clean.includes("flutter")
+    ) {
+      categories.push("mobile");
+    }
+    if (
+      clean.includes("career") ||
+      clean.includes("sự nghiệp") ||
+      clean.includes("tuyển dụng") ||
+      clean.includes("phỏng vấn") ||
+      clean.includes("lương")
+    ) {
+      categories.push("career");
+    }
+    if (clean.includes("khác") || clean.includes("other")) {
+      categories.push("other");
+    }
+    if (
+      clean.includes("tất cả") ||
+      clean.includes("hết") ||
+      clean.includes("mọi tin") ||
+      clean.includes("all")
+    ) {
+      return ["all"];
+    }
+
+    return categories.length > 0 ? categories : ["all"];
+  }
+
+  /**
+   * Lọc danh sách bài viết bằng AI dựa trên prompt sở thích của người dùng.
+   */
+  static async filterArticlesByPrompt(
+    articles: NewsView[],
+    userPrompt: string,
+  ): Promise<NewsView[]> {
+    if (articles.length === 0 || !userPrompt.trim()) {
+      return articles;
+    }
+
+    const candidateList = articles.map((a, idx) => ({
+      index: idx,
+      title: a.title || "",
+      category: a.category || "other",
+      tags: a.tags || [],
+      summary: a.summary || "",
+    }));
+
+    const systemPrompt = `You are a helpful assistant filtering tech articles based on user preferences.
+The user's preference prompt is: "${userPrompt}"
+Below is a list of candidate articles in JSON format.
+Your job is to return a JSON array containing the indices (0-based) of the articles that are relevant or interesting according to the user's prompt.
+If no articles are relevant, return an empty array [].
+If all are relevant, return all indices.
+
+Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown code fences, comments, or extra text.`;
+
+    const prompt = JSON.stringify(candidateList, null, 2);
+
+    const primaryProvider = env.aiProvider;
+    const providersToTry: AiProvider[] = [primaryProvider];
+    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
+    for (const p of allProviders) {
+      if (p !== primaryProvider && this.isProviderConfigured(p)) {
+        providersToTry.push(p);
+      }
+    }
+
+    for (const provider of providersToTry) {
+      try {
+        console.log(`[FilterArticles] Đang thử provider: ${provider}`);
+        let rawResult: unknown;
+        switch (provider) {
+          case "openai":
+            rawResult = await this.callChatCompletion(
+              "https://api.openai.com/v1/chat/completions",
+              env.openaiApiKey,
+              env.openaiModel,
+              prompt,
+              systemPrompt,
+            );
+            break;
+          case "groq":
+            rawResult = await this.callChatCompletion(
+              "https://api.groq.com/openai/v1/chat/completions",
+              env.groqApiKey,
+              env.groqModel,
+              prompt,
+              systemPrompt,
+            );
+            break;
+          case "openrouter":
+            rawResult = await this.callChatCompletion(
+              "https://openrouter.ai/api/v1/chat/completions",
+              env.openrouterApiKey,
+              env.openrouterModel,
+              prompt,
+              systemPrompt,
+              {
+                "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+                "X-Title": "Chatbot News Telegram",
+              },
+            );
+            break;
+          case "gemini":
+          default:
+            rawResult = await this.callGeminiBatch(`${systemPrompt}\n\nCandidate list:\n${prompt}`);
+            break;
+        }
+
+        // Kiểm tra xem kết quả trả về có phải là mảng chỉ số hợp lệ không
+        if (Array.isArray(rawResult)) {
+          const matchedIndices = rawResult
+            .map((item) => Number(item))
+            .filter((idx) => !isNaN(idx) && idx >= 0 && idx < articles.length);
+
+          if (matchedIndices.length > 0) {
+            console.log(
+              `[FilterArticles] AI tìm thấy ${matchedIndices.length}/${articles.length} bài viết phù hợp với prompt: "${userPrompt}"`,
+            );
+            return matchedIndices.map((idx) => articles[idx]);
+          }
+        }
+      } catch (error) {
+        console.warn(`[FilterArticles] Thất bại với ${provider}:`, (error as Error).message);
+      }
+    }
+
+    // Nếu AI fail hoặc không tìm thấy gì, trả về toàn bộ bài viết (fallback)
+    return articles;
   }
 
   static async getFallback(

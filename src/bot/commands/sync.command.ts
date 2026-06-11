@@ -3,6 +3,7 @@ import { NewsCollector } from "../../news/news.collector";
 import { SubscriberModel } from "../subscriber.model";
 import { formatArticlesBatch } from "../../news/news.formatter";
 import { env } from "../../config/env";
+import { AIService } from "../../ai/ai.service";
 
 export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector): void {
   bot.command("sync", async (ctx) => {
@@ -48,20 +49,53 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
       const topNew = sortedNew.slice(0, 5);
 
       await ctx.reply(
-        `Đã thu thập thêm ${newArticles.length} bài viết mới. Đang gửi ${topNew.length} bài viết chất lượng nhất.`,
+        `Đã thu thập thêm ${newArticles.length} bài viết mới. Tiến hành gửi tin theo sở thích của từng người dùng...`,
       );
 
       // Lấy danh sách người đăng ký nhận tin
       const subscribers = await SubscriberModel.find().lean().exec();
       if (subscribers.length > 0) {
-        const message = formatArticlesBatch(topNew, ctx.me.username);
-        const keyboard = new InlineKeyboard();
-        if (topNew.length === 5) {
-          keyboard.text("Trang sau", "news_page_2");
-        }
-
         for (const sub of subscribers) {
           try {
+            const preferred =
+              sub.preferredCategories && sub.preferredCategories.length > 0
+                ? sub.preferredCategories
+                : ["all"];
+            let userArticles = topNew;
+
+            if (!preferred.includes("all")) {
+              const filtered = notifyArticles.filter(
+                (a) =>
+                  a.category &&
+                  preferred.map((p) => p.toLowerCase()).includes(a.category.toLowerCase()),
+              );
+              if (filtered.length === 0) {
+                // Không có bài mới nào thuộc thể loại ưa thích của user này
+                continue;
+              }
+              userArticles = [...filtered]
+                .sort((a, b) => {
+                  const scoreA = typeof a.importanceScore === "number" ? a.importanceScore : 50;
+                  const scoreB = typeof b.importanceScore === "number" ? b.importanceScore : 50;
+                  return scoreB - scoreA;
+                })
+                .slice(0, 5);
+            }
+
+            // Lọc bổ sung bằng AI nếu người dùng có custom prompt và không chọn "Tất cả"
+            if (sub.customPrompt && !preferred.includes("all")) {
+              userArticles = await AIService.filterArticlesByPrompt(userArticles, sub.customPrompt);
+              if (userArticles.length === 0) {
+                continue;
+              }
+            }
+
+            const message = formatArticlesBatch(userArticles, ctx.me.username, preferred);
+            const keyboard = new InlineKeyboard();
+            if (userArticles.length === 5) {
+              keyboard.text("Trang sau", "news_page_2");
+            }
+
             await bot.api.sendMessage(sub.chatId, message, {
               parse_mode: "HTML",
               reply_markup: keyboard,

@@ -9,6 +9,7 @@ import { NewsService } from "../../news/news.service";
 import { fetchArticleContent } from "../../news/article.fetcher";
 import { AIService } from "../../ai/ai.service";
 import { NewsModel } from "../../news/news.model";
+import { SubscriberModel } from "../subscriber.model";
 
 export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService): void {
   // Lệnh /news hiển thị danh sách 5 tin tức mới nhất, hỗ trợ /news [page] để xem các trang tiếp theo
@@ -23,12 +24,25 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         }
       }
 
+      const chatId = ctx.chat?.id;
+      let categories: string[] = ["all"];
+      if (chatId) {
+        const sub = await SubscriberModel.findOne({ chatId }).lean();
+        if (sub?.preferredCategories && sub.preferredCategories.length > 0) {
+          categories = sub.preferredCategories;
+        }
+      }
+
       const limit = 5;
       const skip = (page - 1) * limit;
-      const latestNews = await newsService.getLatest(limit, skip);
+      const latestNews = await newsService.getLatest(limit, skip, categories);
 
       if (latestNews.length === 0) {
-        await ctx.reply(`Không tìm thấy tin tức nào ở Trang ${page}.`);
+        await ctx.reply(
+          categories.includes("all")
+            ? `Không tìm thấy tin tức nào ở Trang ${page}.`
+            : `Không tìm thấy tin tức nào thuộc thể loại đã chọn ở Trang ${page}.`,
+        );
         return;
       }
 
@@ -40,7 +54,7 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         keyboard.text("Trang sau", `news_page_${page + 1}`);
       }
 
-      await ctx.reply(formatNewsList(latestNews, ctx.me.username, skip + 1), {
+      await ctx.reply(formatNewsList(latestNews, ctx.me.username, skip + 1, categories), {
         parse_mode: "HTML",
         reply_markup: keyboard,
       });
@@ -53,13 +67,26 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
   // Xử lý chuyển trang tin tức qua nút bấm Next / Prev
   bot.callbackQuery(/news_page_(\d+)/, async (ctx) => {
     const page = parseInt(ctx.match[1], 10);
+    const chatId = ctx.chat?.id;
     try {
+      let categories: string[] = ["all"];
+      if (chatId) {
+        const sub = await SubscriberModel.findOne({ chatId }).lean();
+        if (sub?.preferredCategories && sub.preferredCategories.length > 0) {
+          categories = sub.preferredCategories;
+        }
+      }
+
       const limit = 5;
       const skip = (page - 1) * limit;
-      const latestNews = await newsService.getLatest(limit, skip);
+      const latestNews = await newsService.getLatest(limit, skip, categories);
 
       if (latestNews.length === 0) {
-        await ctx.answerCallbackQuery({ text: `Không có tin tức ở Trang ${page}.` });
+        await ctx.answerCallbackQuery({
+          text: categories.includes("all")
+            ? `Không có tin tức ở Trang ${page}.`
+            : `Không có tin tức thuộc thể loại đã chọn ở Trang ${page}.`,
+        });
         return;
       }
 
@@ -71,7 +98,7 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         keyboard.text("Trang sau", `news_page_${page + 1}`);
       }
 
-      await ctx.editMessageText(formatNewsList(latestNews, ctx.me.username, skip + 1), {
+      await ctx.editMessageText(formatNewsList(latestNews, ctx.me.username, skip + 1, categories), {
         parse_mode: "HTML",
         reply_markup: keyboard,
       });
@@ -224,10 +251,18 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
 
   // Xử lý khi click quay lại danh sách
   bot.callbackQuery("back_to_list", async (ctx) => {
+    const chatId = ctx.chat?.id;
     try {
+      let categories: string[] = ["all"];
+      if (chatId) {
+        const sub = await SubscriberModel.findOne({ chatId }).lean();
+        if (sub?.preferredCategories && sub.preferredCategories.length > 0) {
+          categories = sub.preferredCategories;
+        }
+      }
       const limit = 5;
-      const latestNews = await newsService.getLatest(limit);
-      const message = formatNewsList(latestNews, ctx.me.username);
+      const latestNews = await newsService.getLatest(limit, 0, categories);
+      const message = formatNewsList(latestNews, ctx.me.username, 1, categories);
 
       const keyboard = new InlineKeyboard();
       if (latestNews.length === limit) {

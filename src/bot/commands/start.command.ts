@@ -100,6 +100,7 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
         "<b>CÁC LỆNH DÀNH CHO BẠN:</b>\n" +
         "- <code>/news</code> - Xem 5 bài viết mới nhất.\n" +
         "- <code>/news [trang]</code> - Xem tin ở các trang tiếp theo (ví dụ: <code>/news 2</code>).\n" +
+        "- <code>/category [nội dung]</code> hoặc <code>/theloai [nội dung]</code> - Chọn thể loại muốn xuất hiện nhất (hỗ trợ nhập văn bản tự do bằng AI).\n" +
         "- <code>/submitfeed [url_rss]</code> - Đề xuất thêm nguồn tin mới cho Bot theo dõi.\n" +
         "- <code>/stop</code> - Hủy nhận tin tức tự động.\n" +
         "- <code>/start</code> - Đăng ký lại và hiển thị hướng dẫn này.";
