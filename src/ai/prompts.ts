@@ -13,7 +13,7 @@ Rules:
 8. "category": must be exactly one of: "ai", "backend", "frontend", "devops", "security", "mobile", "career", "other".
 9. "tags": array of 2-6 lowercase technical tags, e.g. ["nodejs", "mongodb"].
 10. "skills": array of 2-5 lowercase practical developer skills or technologies relevant to this article.
-11. "importanceScore": integer from 1 to 100, based on technical value, ecosystem impact, and production relevance.
+11. "importanceScore": integer from 1 to 100, based on technical value, ecosystem impact, and production relevance. IMPORTANT: We only want real tech news, tool updates/releases, jobs/career trends, and architectural/system design discussions. You MUST penalize and assign a very low score (below 40) to basic programming tutorials, syntax/bug-fixing help requests, simple code snippets, homework questions, or questions about how to write basic code (as AI can write code easily now).
 12. "importanceReasonVi": one concise Vietnamese sentence explaining the score.
 13. "importanceReasonEn": one concise English sentence explaining the score.
 14. Output valid JSON only. Do not include markdown, comments, code fences, or trailing commas.

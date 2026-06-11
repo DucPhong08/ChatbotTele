@@ -8,6 +8,19 @@ import { feeds as devFeeds } from "./feed/feeds-dev.config";
 import { feeds as mxhFeeds } from "./feed/feeds-mxh.config";
 import { FeedModel } from "./feed.model";
 import { scrapeArticleContent } from "../utils/scraper";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
+
+async function fetchRssViaCurl(url: string): Promise<string> {
+  const userAgent =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  const { stdout } = await execAsync(`curl -sL -H "User-Agent: ${userAgent}" "${url}"`, {
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return stdout;
+}
 
 const feeds = env.feedSource === "mxh" ? mxhFeeds : devFeeds;
 
@@ -93,7 +106,20 @@ export class NewsCollector {
   private async fetchFeedItems(feed: FeedDoc, seenUrls: Set<string>): Promise<CandidateArticle[]> {
     if (this.shouldSkipFeed(feed.url, feed.source)) return [];
 
-    const parsedFeed = await this.parser.parseURL(feed.url);
+    let targetUrl = feed.url;
+    if (targetUrl.includes("reddit.com")) {
+      if (
+        !targetUrl.includes("/hot") &&
+        !targetUrl.includes("/top") &&
+        !targetUrl.includes("/new")
+      ) {
+        targetUrl = targetUrl.replace(/\/\.rss$/, "").replace(/\/$/, "") + "/hot/.rss";
+      }
+    }
+
+    const parsedFeed = targetUrl.includes("reddit.com")
+      ? await this.parser.parseString(await fetchRssViaCurl(targetUrl))
+      : await this.parser.parseURL(targetUrl);
     this.lastFetchTimes.set(feed.url, Date.now());
 
     const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
@@ -196,12 +222,7 @@ export class NewsCollector {
   }
 
   private async seedFeedsIfEmpty(): Promise<void> {
-    const count = await FeedModel.countDocuments();
-    if (count > 0) return;
-
-    console.log(
-      `${LOG} CSDL chưa có feed nào. Tiến hành nạp ${feeds.length} feed tĩnh từ cấu hình.`,
-    );
+    console.log(`${LOG} Đồng bộ hóa ${feeds.length} nguồn tin từ cấu hình tĩnh vào CSDL.`);
 
     await FeedModel.bulkWrite(
       feeds.map((feed) => ({
@@ -219,6 +240,13 @@ export class NewsCollector {
           upsert: true,
         },
       })),
+    );
+
+    // Tắt các feed không còn nằm trong file cấu hình tĩnh
+    const activeUrls = feeds.map((feed) => feed.url);
+    await FeedModel.updateMany(
+      { url: { $nin: activeUrls }, isActive: true },
+      { $set: { isActive: false } },
     );
   }
 

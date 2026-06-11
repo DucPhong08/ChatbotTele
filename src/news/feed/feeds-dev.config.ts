@@ -4,7 +4,7 @@ export const feeds: FeedConfig[] = [
   // Core developer blogs
   {
     source: "Hacker News",
-    url: "https://hnrss.org/frontpage",
+    url: "https://hnrss.org/frontpage?points=100",
     category: "general",
     skills: ["startup", "engineering", "programming", "ai"],
   },
@@ -104,15 +104,33 @@ export const feeds: FeedConfig[] = [
   // Community signal - chỉ dùng để bắt trend, không coi là nguồn chính thức
   {
     source: "Reddit Node",
-    url: "https://www.reddit.com/r/node/.rss",
+    url: "https://www.reddit.com/r/node/hot/.rss",
     category: "backend",
     skills: ["nodejs", "javascript", "backend"],
   },
   {
     source: "Reddit WebDev",
-    url: "https://www.reddit.com/r/webdev/.rss",
+    url: "https://www.reddit.com/r/webdev/hot/.rss",
     category: "frontend",
     skills: ["web", "frontend", "fullstack"],
+  },
+  {
+    source: "Reddit Backend",
+    url: "https://www.reddit.com/r/Backend/hot/.rss",
+    category: "backend",
+    skills: ["backend", "architecture", "database", "system-design"],
+  },
+  {
+    source: "Reddit RemoteITJobs",
+    url: "https://www.reddit.com/r/RemoteITJobs/hot/.rss",
+    category: "career",
+    skills: ["career", "remote", "jobs", "it"],
+  },
+  {
+    source: "Reddit linux4noobs",
+    url: "https://www.reddit.com/r/linux4noobs/hot/.rss",
+    category: "devops",
+    skills: ["linux", "bash", "sysadmin", "devops"],
   },
 
   // StackOverflow - câu hỏi kỹ thuật mới, không phải news chính thống
