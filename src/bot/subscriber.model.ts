@@ -9,7 +9,6 @@ const subscriberSchema = new Schema<Subscriber>(
     username: { type: String, trim: true },
     firstName: { type: String, trim: true },
     lastName: { type: String, trim: true },
-    phoneNumber: { type: String, trim: true },
     isActiveAI: { type: Boolean, default: true },
     preferredCategories: { type: [String], default: ["all"] },
     customPrompt: { type: String, default: "" },

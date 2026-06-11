@@ -205,6 +205,109 @@ export class AIService {
   }
 
   /**
+   * Dịch sang tiếng Việt thông minh bằng AI, giữ nguyên thuật ngữ chuyên ngành.
+   * Fallback sang Google Translate nếu AI thất bại.
+   */
+  private static async translateSmartVi(text: string): Promise<string> {
+    if (!text.trim()) return "";
+
+    const prompt = `Translate the following text to Vietnamese. IMPORTANT RULES:
+1. Keep ALL technical terms, programming terminology, proper nouns, tool names, framework names, library names, and abbreviations in their ORIGINAL English form. Examples: framework, runtime, repository, pull request, cache, deployment, pipeline, container, serverless, API, SDK, CLI, MCP Server, AI Agent, Docker, Kubernetes, Node.js, React, etc.
+2. Only translate the natural language parts to Vietnamese with proper diacritics.
+3. Return ONLY the translated text, nothing else.
+
+Text to translate:
+${text}`;
+
+    const providersToTry: AiProvider[] = [];
+    const allProviders: AiProvider[] = ["gemini", "groq", "openai", "openrouter"];
+    for (const p of allProviders) {
+      if (this.isProviderConfigured(p)) {
+        providersToTry.push(p);
+      }
+    }
+
+    for (const provider of providersToTry) {
+      try {
+        let result: string | null = null;
+        switch (provider) {
+          case "gemini": {
+            const response = await this.fetchWithTimeout(
+              `https://generativelanguage.googleapis.com/v1beta/models/${env.geminiModel}:generateContent?key=${env.geminiApiKey}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ role: "user", parts: [{ text: prompt }] }],
+                  generationConfig: { temperature: 0.1 },
+                }),
+              },
+            );
+            if (response.ok) {
+              const data = (await response.json()) as {
+                candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+              };
+              result = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+            }
+            break;
+          }
+          default: {
+            const endpoints: Record<string, { url: string; key: string; model: string }> = {
+              openai: {
+                url: "https://api.openai.com/v1/chat/completions",
+                key: env.openaiApiKey,
+                model: env.openaiModel,
+              },
+              groq: {
+                url: "https://api.groq.com/openai/v1/chat/completions",
+                key: env.groqApiKey,
+                model: env.groqModel,
+              },
+              openrouter: {
+                url: "https://openrouter.ai/api/v1/chat/completions",
+                key: env.openrouterApiKey,
+                model: env.openrouterModel,
+              },
+            };
+            const ep = endpoints[provider];
+            if (!ep) break;
+            const response = await this.fetchWithTimeout(ep.url, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${ep.key}`,
+              },
+              body: JSON.stringify({
+                model: ep.model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.1,
+              }),
+            });
+            if (response.ok) {
+              const data = (await response.json()) as {
+                choices?: Array<{ message?: { content?: string } }>;
+              };
+              result = data.choices?.[0]?.message?.content?.trim() || null;
+            }
+            break;
+          }
+        }
+
+        if (result && hasVietnamese(result)) {
+          console.log(`[TranslateSmartVi] Dịch thành công bằng ${provider}`);
+          return result;
+        }
+      } catch (error) {
+        console.warn(`[TranslateSmartVi] ${provider} thất bại:`, (error as Error).message);
+      }
+    }
+
+    // Fallback cuối cùng: Google Translate
+    console.log(`[TranslateSmartVi] AI thất bại, fallback sang Google Translate`);
+    return this.translateWithGoogle(text, "vi");
+  }
+
+  /**
    * Tóm tắt bài viết từ nội dung đầy đủ bằng AI.
    * Trả về cấu trúc DetailedSummaryResult.
    */
@@ -874,7 +977,7 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
             break;
         }
 
-        const parsed = this.parseBatchResult(rawResult, articles);
+        const parsed = await this.parseBatchResult(rawResult, articles);
         if (parsed) {
           console.log(`[AI Batch] Batch xử lý thành công bằng: ${provider}.`);
           return parsed.map((result) => ({
@@ -915,7 +1018,7 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
     return `${TECH_NEWS_PROMPT}
 
 Process ALL of the following ${articles.length} articles and return a JSON object with key "articles" containing an array of results in the SAME order.
-Each element must match the schema: { title, summary, category, tags, importanceScore, importanceReason }.
+Each element must match the schema: { titleVi, titleEn, summaryVi, summaryEn, category, tags, skills, importanceScore, importanceReasonVi, importanceReasonEn }.
 
 Articles:
 ${JSON.stringify(articlesJson, null, 2)}`;
@@ -996,23 +1099,27 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     return JSON.parse(text);
   }
 
-  private static parseBatchResult(
+  private static async parseBatchResult(
     raw: unknown,
     articles: Array<{ title: string; content: string; source: string; publishedAt: Date }>,
-  ): AIProcessedResult[] | null {
+  ): Promise<AIProcessedResult[] | null> {
     if (!this.isRecord(raw)) return null;
     const arr = Array.isArray(raw.articles) ? raw.articles : null;
     if (!arr || arr.length !== articles.length) return null;
 
-    return arr.map((item: unknown, i: number) => {
-      return this.validateAndNormalizeResult(
-        item,
-        articles[i].title,
-        articles[i].content,
-        articles[i].source,
-        articles[i].publishedAt,
+    const results: AIProcessedResult[] = [];
+    for (let i = 0; i < arr.length; i++) {
+      results.push(
+        await this.validateAndNormalizeResult(
+          arr[i],
+          articles[i].title,
+          articles[i].content,
+          articles[i].source,
+          articles[i].publishedAt,
+        ),
       );
-    });
+    }
+    return results;
   }
 
   private static async processWithGemini(
@@ -1109,7 +1216,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       }
 
       const result = JSON.parse(responseText) as unknown;
-      return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
+      return await this.validateAndNormalizeResult(result, title, content, source, publishedAt);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng Gemini (${env.geminiModel}):`, error);
       throw error;
@@ -1165,7 +1272,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       }
 
       const result = JSON.parse(choiceContent) as unknown;
-      return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
+      return await this.validateAndNormalizeResult(result, title, content, source, publishedAt);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng OpenAI (${env.openaiModel}):`, error);
       throw error;
@@ -1224,7 +1331,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       }
 
       const result = JSON.parse(choiceContent) as unknown;
-      return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
+      return await this.validateAndNormalizeResult(result, title, content, source, publishedAt);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng Groq (${env.groqModel}):`, error);
       throw error;
@@ -1285,7 +1392,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       }
 
       const result = JSON.parse(choiceContent) as unknown;
-      return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
+      return await this.validateAndNormalizeResult(result, title, content, source, publishedAt);
     };
 
     try {
@@ -1318,13 +1425,13 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     return `${TECH_NEWS_PROMPT}\n\nArticle details to process:\nTitle: ${title}\nContent: ${content}\nSource: ${source}\nURL: ${url}`;
   }
 
-  private static validateAndNormalizeResult(
+  private static async validateAndNormalizeResult(
     result: unknown,
     title: string,
     content: string,
     source: string,
     publishedAt: Date,
-  ): AIProcessedResult {
+  ): Promise<AIProcessedResult> {
     const baseline = this.inferArticleMetadata(title, content, source, publishedAt);
     const raw = this.isRecord(result) ? result : {};
     const category = this.isCategory(raw.category) ? raw.category : baseline.category;
@@ -1404,6 +1511,30 @@ ${JSON.stringify(articlesJson, null, 2)}`;
 
     importanceReasonVi = this.truncate(importanceReasonVi, 150);
     importanceReasonEn = this.truncate(importanceReasonEn, 150);
+
+    // Post-processing: nếu các field tiếng Việt không chứa tiếng Việt, tự động dịch bằng AI (giữ thuật ngữ chuyên ngành)
+    if (!hasVietnamese(titleVi) && titleVi.length > 0) {
+      console.log(
+        `[Auto-translate] titleVi không phải tiếng Việt, đang dịch: "${titleVi.slice(0, 50)}..."`,
+      );
+      const translated = await this.translateSmartVi(titleVi);
+      if (translated && hasVietnamese(translated)) {
+        titleVi = this.truncate(translated, 120);
+      }
+    }
+    if (!hasVietnamese(summaryViStr) && summaryViStr.length > 0) {
+      console.log(`[Auto-translate] summaryVi không phải tiếng Việt, đang dịch...`);
+      const translated = await this.translateSmartVi(summaryViStr.slice(0, 600));
+      if (translated && hasVietnamese(translated)) {
+        summaryViStr = translated;
+      }
+    }
+    if (!hasVietnamese(importanceReasonVi) && importanceReasonVi.length > 0) {
+      const translated = await this.translateSmartVi(importanceReasonVi);
+      if (translated && hasVietnamese(translated)) {
+        importanceReasonVi = this.truncate(translated, 150);
+      }
+    }
 
     return {
       titleVi,

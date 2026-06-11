@@ -3,7 +3,6 @@ export interface Subscriber {
   username?: string;
   firstName?: string;
   lastName?: string;
-  phoneNumber?: string;
   isActiveAI?: boolean;
   preferredCategories?: string[];
   customPrompt?: string;
