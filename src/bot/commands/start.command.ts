@@ -4,11 +4,9 @@ import { NewsService } from "../../news/news.service";
 import { NewsModel } from "../../news/news.model";
 import { formatNewsDetail, hasVietnamese } from "../../news/news.formatter";
 import { AIService } from "../../ai/ai.service";
+import { env } from "../../config/env";
 
-export function registerStartCommand(
-  bot: Bot<Context>,
-  newsService: NewsService,
-): void {
+export function registerStartCommand(bot: Bot<Context>, newsService: NewsService): void {
   bot.command("start", async (ctx) => {
     const chatId = ctx.chat.id;
     const parameter = String(ctx.match || "").trim();
@@ -17,7 +15,9 @@ export function registerStartCommand(
     if (parameter.startsWith("detail_")) {
       const newsId = parameter.replace("detail_", "");
       if (!newsId) {
-        await ctx.reply("Không tìm thấy bài viết này (liên kết cũ không chứa mã ID). Vui lòng gõ lệnh /news để lấy danh sách mới và thử lại.");
+        await ctx.reply(
+          "Không tìm thấy bài viết này (liên kết cũ không chứa mã ID). Vui lòng gõ lệnh /news để lấy danh sách mới và thử lại.",
+        );
         return;
       }
       try {
@@ -31,7 +31,8 @@ export function registerStartCommand(
         let updated = false;
         if (item.summary && !hasVietnamese(item.summary)) {
           console.log(`[On-the-fly Translate] Đang dịch tóm tắt cho bài: ${item.title}`);
-          const shortSummary = item.summary.length > 600 ? item.summary.slice(0, 600).trim() + "..." : item.summary;
+          const shortSummary =
+            item.summary.length > 600 ? item.summary.slice(0, 600).trim() + "..." : item.summary;
           const translated = await AIService.translateWithGoogle(shortSummary);
           if (translated && translated !== item.summary) {
             item.summary = translated;
@@ -64,7 +65,7 @@ export function registerStartCommand(
               title: item.title,
               summary: item.summary,
               importanceReason: item.importanceReason,
-            }
+            },
           );
         }
 
@@ -88,22 +89,32 @@ export function registerStartCommand(
 
     try {
       // Đăng ký nhận tin bằng cách lưu chatId vào database
-      await SubscriberModel.updateOne(
-        { chatId },
-        { $setOnInsert: { chatId } },
-        { upsert: true },
-      );
+      await SubscriberModel.updateOne({ chatId }, { $setOnInsert: { chatId } }, { upsert: true });
 
-      await ctx.reply(
-        "Chào mừng bạn đến với kênh tin tức công nghệ!\n\n" +
-          "Bạn đã đăng ký nhận tin tự động thành công. Mỗi khi có tin tức mới nhất từ Hacker News, Dev.to hay GitHub Blog, tôi sẽ tự động gửi ngay cho bạn.\n\n" +
-          "Bạn cũng có thể dùng lệnh /news để xem tin tức mới nhất, hoặc /stop để hủy nhận tin tự động.",
-      );
+      const isAdmin = env.adminChatIds.includes(chatId);
+
+      let welcomeMessage =
+        "🤖 <b>CHÀO MỪNG BẠN ĐẾN VỚI TECHDEVNEWS BOT</b>\n" +
+        "━━━━━━━━━━━━━━━━━━━━\n" +
+        "Bạn đã đăng ký nhận tin tự động thành công! Bot sẽ tự động gửi các bài viết công nghệ mới nhất cho bạn.\n\n" +
+        "📌 <b>CÁC LỆNH DÀNH CHO BẠN:</b>\n" +
+        "• <code>/news</code> - Xem 5 bài viết mới nhất.\n" +
+        "• <code>/news [trang]</code> - Xem tin ở các trang tiếp theo (ví dụ: <code>/news 2</code>).\n" +
+        "• <code>/stop</code> - Hủy nhận tin tức tự động.\n" +
+        "• <code>/start</code> - Đăng ký lại và hiển thị hướng dẫn này.";
+
+      if (isAdmin) {
+        welcomeMessage +=
+          "\n\n⚙️ <b>CÁC LỆNH DÀNH CHO ADMIN:</b>\n" +
+          "• <code>/sync</code> - Quét nguồn tin tức mới và phát sóng (broadcast) ngay lập tức.\n" +
+          "• <code>/stats</code> - Xem thống kê hệ thống (tổng số bài viết, subscriber, model AI, môi trường).\n" +
+          "• <code>/ping</code> - Kiểm tra trạng thái hoạt động của bot và môi trường.";
+      }
+
+      await ctx.reply(welcomeMessage, { parse_mode: "HTML" });
     } catch (error) {
       console.error("Lỗi khi đăng ký người dùng:", error);
-      await ctx.reply(
-        "Đã xảy ra lỗi khi đăng ký nhận tin. Vui lòng thử lại sau!",
-      );
+      await ctx.reply("Đã xảy ra lỗi khi đăng ký nhận tin. Vui lòng thử lại sau!");
     }
   });
 }

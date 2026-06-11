@@ -1,6 +1,32 @@
 import { type FeedConfig } from "../../types/feed";
 
 export const feeds: FeedConfig[] = [
+  // Core developer blogs
+  {
+    source: "Hacker News",
+    url: "https://hnrss.org/frontpage",
+    category: "general",
+    skills: ["startup", "engineering", "programming", "ai"],
+  },
+  {
+    source: "Dev.to",
+    url: "https://dev.to/feed",
+    category: "general",
+    skills: ["javascript", "typescript", "web", "backend"],
+  },
+  {
+    source: "OpenAI News",
+    url: "https://openai.com/news/rss.xml",
+    category: "ai",
+    skills: ["ai", "llm", "agents", "api"],
+  },
+  {
+    source: "Hugging Face Blog",
+    url: "https://huggingface.co/blog/feed.xml",
+    category: "ai",
+    skills: ["ai", "machine-learning", "open-source-models"],
+  },
+
   // Backend / Runtime
   {
     source: "Node.js Blog",
@@ -27,6 +53,44 @@ export const feeds: FeedConfig[] = [
     url: "https://feed.infoq.com/architecture",
     category: "backend",
     skills: ["architecture", "backend", "system-design"],
+  },
+
+  // Frontend / UX / UI / Weekly Newsletters
+  {
+    source: "Nielsen Norman Group",
+    url: "https://www.nngroup.com/feed/rss",
+    category: "other",
+    skills: ["ux", "ui", "product-design", "frontend"],
+  },
+  {
+    source: "Front-End Front",
+    url: "https://frontendfront.com/feed.xml",
+    category: "frontend",
+    skills: ["frontend", "web", "css", "html", "javascript"],
+  },
+  {
+    source: "CSS-Tricks",
+    url: "https://css-tricks.com/feed/",
+    category: "frontend",
+    skills: ["css", "frontend", "web", "design"],
+  },
+  {
+    source: "CSS Weekly",
+    url: "https://css-weekly.com/feed/",
+    category: "frontend",
+    skills: ["css", "frontend", "web", "design"],
+  },
+  {
+    source: "JavaScript Weekly",
+    url: "https://javascriptweekly.com/rss",
+    category: "frontend",
+    skills: ["javascript", "typescript", "web"],
+  },
+  {
+    source: "Node Weekly",
+    url: "https://nodeweekly.com/rss",
+    category: "backend",
+    skills: ["nodejs", "javascript", "backend"],
   },
 
   // DevOps / Cloud / Edge
