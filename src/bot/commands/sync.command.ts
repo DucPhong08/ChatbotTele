@@ -8,13 +8,13 @@ export function registerSyncCommand(
   collector: NewsCollector,
 ): void {
   bot.command("sync", async (ctx) => {
-    await ctx.reply("🔄 Đang tiến hành thu thập tin tức mới bằng AI...");
+    await ctx.reply("Đang tiến hành thu thập tin tức mới bằng AI...");
 
     try {
       const newArticles = await collector.collect();
       
       if (newArticles.length === 0) {
-        await ctx.reply("✅ Đã hoàn tất kiểm tra. Không có tin tức mới nào.");
+        await ctx.reply("Đã hoàn tất kiểm tra. Không có tin tức mới nào.");
         return;
       }
 
@@ -26,7 +26,7 @@ export function registerSyncCommand(
       });
       const topNew = sortedNew.slice(0, 10);
 
-      await ctx.reply(`✅ Đã thu thập thêm ${newArticles.length} bài viết mới. Đang gửi ${topNew.length} bài viết chất lượng nhất.`);
+      await ctx.reply(`Đã thu thập thêm ${newArticles.length} bài viết mới. Đang gửi ${topNew.length} bài viết chất lượng nhất.`);
 
       // Lấy danh sách người đăng ký nhận tin
       const subscribers = await SubscriberModel.find().lean().exec();
@@ -53,7 +53,7 @@ export function registerSyncCommand(
       }
     } catch (error) {
       console.error("Lỗi khi chạy lệnh /sync:", error);
-      await ctx.reply("❌ Tiến trình thu thập tin tức thất bại. Vui lòng kiểm tra lại cấu hình AI.");
+      await ctx.reply("Tiến trình thu thập tin tức thất bại. Vui lòng kiểm tra lại cấu hình AI.");
     }
   });
 }

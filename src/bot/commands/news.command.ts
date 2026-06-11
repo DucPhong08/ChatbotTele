@@ -27,7 +27,7 @@ export function registerNewsCommand(
       });
     } catch (error) {
       console.error("Lỗi khi xử lý lệnh /news:", error);
-      await ctx.reply("❌ Đã xảy ra lỗi khi lấy danh sách tin tức. Vui lòng thử lại sau!");
+      await ctx.reply("Đã xảy ra lỗi khi lấy danh sách tin tức. Vui lòng thử lại sau!");
     }
   });
 
