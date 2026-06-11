@@ -1,4 +1,4 @@
-import { type NewsView } from "./news.service";
+import { type NewsView } from "../types/news";
 
 export function escapeHtml(text: string): string {
   return text

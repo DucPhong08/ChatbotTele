@@ -1,18 +1,5 @@
 import { Schema, model, type HydratedDocument } from "mongoose";
-
-export interface News {
-  title: string;
-  url: string;
-  source: string;
-  publishedAt: Date;
-  summary?: string;
-  category?: string;
-  tags?: string[];
-  skills?: string[];
-  importanceScore?: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { type News } from "../types/news";
 
 export type NewsDocument = HydratedDocument<News>;
 
@@ -27,6 +14,7 @@ const newsSchema = new Schema<News>(
     tags: { type: [String], default: [] },
     skills: { type: [String], default: [] },
     importanceScore: { type: Number, default: 50 },
+    importanceReason: { type: String, trim: true },
   },
   {
     timestamps: true,
@@ -36,5 +24,6 @@ const newsSchema = new Schema<News>(
 newsSchema.index({ url: 1 }, { unique: true });
 newsSchema.index({ publishedAt: -1 });
 newsSchema.index({ source: 1 });
+newsSchema.index({ createdAt: 1 }, { expireAfterSeconds: 15 * 24 * 60 * 60 });
 
 export const NewsModel = model<News>("News", newsSchema);

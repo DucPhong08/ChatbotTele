@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export type TelegramMode = "polling" | "webhook";
-export type AiProvider = "gemini" | "openai" | "groq";
+export type AiProvider = "gemini" | "openai" | "groq" | "openrouter";
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -28,8 +28,13 @@ function readTelegramMode(): TelegramMode {
 function readAiProvider(): AiProvider {
   const provider = process.env.AI_PROVIDER?.trim() || "gemini";
 
-  if (provider !== "gemini" && provider !== "openai" && provider !== "groq") {
-    throw new Error("AI_PROVIDER phải là gemini, openai hoặc groq");
+  if (
+    provider !== "gemini" &&
+    provider !== "openai" &&
+    provider !== "groq" &&
+    provider !== "openrouter"
+  ) {
+    throw new Error("AI_PROVIDER phải là gemini, openai, groq hoặc openrouter");
   }
 
   return provider;
@@ -44,6 +49,17 @@ function readPort(): number {
   }
 
   return port;
+}
+
+function readNotificationMinScore(): number {
+  const rawScore = process.env.NEWS_NOTIFICATION_MIN_SCORE?.trim() || "65";
+  const score = Number(rawScore);
+
+  if (!Number.isInteger(score) || score < 1 || score > 100) {
+    throw new Error("NEWS_NOTIFICATION_MIN_SCORE phải là số nguyên từ 1 đến 100");
+  }
+
+  return score;
 }
 
 function readAdminChatIds(): number[] {
@@ -79,6 +95,7 @@ export const env = {
   webhookUrl,
   port: readPort(),
   newsCron: process.env.NEWS_CRON?.trim() || "*/30 * * * *",
+  notificationMinScore: readNotificationMinScore(),
   aiProvider: readAiProvider(),
   adminChatIds: readAdminChatIds(),
   geminiApiKey: process.env.GEMINI_API_KEY?.trim() || "",
@@ -87,5 +104,7 @@ export const env = {
   openaiModel: process.env.OPENAI_MODEL?.trim() || "gpt-5-nano",
   groqApiKey: process.env.GROQ_API_KEY?.trim() || "",
   groqModel: process.env.GROQ_MODEL?.trim() || "llama-3.3-70b-versatile",
+  openrouterApiKey: process.env.OPENROUTER_API_KEY?.trim() || "",
+  openrouterModel: process.env.OPENROUTER_MODEL?.trim() || "google/gemini-2.5-flash:free",
 };
 

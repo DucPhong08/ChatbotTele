@@ -1,25 +1,115 @@
-import { env } from "../config/env";
+import { env, type AiProvider } from "../config/env";
+import { type AIProcessedResult, type ArticleCategory } from "../types/ai";
+import { TECH_NEWS_PROMPT } from "./prompts";
 
-export interface AIProcessedResult {
-  titleVi: string;
-  summaryVi: string;
-  category: "ai" | "backend" | "frontend" | "devops" | "security" | "mobile" | "career" | "other";
-  tags: string[];
-  importanceScore: number;
-}
+const CATEGORY_OPTIONS = [
+  "ai",
+  "backend",
+  "frontend",
+  "devops",
+  "security",
+  "mobile",
+  "career",
+  "other",
+] as const;
+
+type InferredMetadata = Pick<
+  AIProcessedResult,
+  "category" | "tags" | "importanceScore" | "importanceReason"
+>;
+
+type KeywordRule = {
+  category: ArticleCategory;
+  tag: string;
+  keywords: string[];
+  score: number;
+};
+
+type GoogleTranslateResponse = Array<Array<[string, ...unknown[]]>>;
+
+const SOURCE_SCORES: Record<string, number> = {
+  "OpenAI Blog": 18,
+  "GitHub Blog": 16,
+  "React Blog": 16,
+  "Cloudflare Changelog": 16,
+  "AWS What's New": 15,
+  "Hugging Face Blog": 15,
+  "Hacker News": 12,
+  "Dev.to": 9,
+};
+
+const KEYWORD_RULES: KeywordRule[] = [
+  {
+    category: "security",
+    tag: "security",
+    keywords: ["security", "vulnerability", "cve", "exploit", "zero-day", "patch", "breach"],
+    score: 14,
+  },
+  {
+    category: "ai",
+    tag: "ai",
+    keywords: ["ai", "llm", "agent", "model", "inference", "fine-tuning", "rag", "embedding"],
+    score: 10,
+  },
+  {
+    category: "backend",
+    tag: "backend",
+    keywords: ["node.js", "nodejs", "api", "database", "postgres", "mongodb", "redis", "runtime", "queue"],
+    score: 9,
+  },
+  {
+    category: "frontend",
+    tag: "frontend",
+    keywords: ["react", "next.js", "nextjs", "javascript", "typescript", "css", "browser", "web app"],
+    score: 8,
+  },
+  {
+    category: "devops",
+    tag: "devops",
+    keywords: ["cloud", "aws", "cloudflare", "deployment", "docker", "kubernetes", "ci/cd", "serverless"],
+    score: 8,
+  },
+  {
+    category: "backend",
+    tag: "performance",
+    keywords: ["performance", "benchmark", "latency", "throughput", "memory leak", "garbage collection"],
+    score: 8,
+  },
+  {
+    category: "other",
+    tag: "release",
+    keywords: ["release", "released", "stable", "beta", "rc", "changelog", "breaking change", "migration"],
+    score: 7,
+  },
+  {
+    category: "career",
+    tag: "career",
+    keywords: ["career", "hiring", "interview", "salary", "developer productivity", "developer experience"],
+    score: 5,
+  },
+];
+
 
 export class AIService {
   private static async translateWithGoogle(text: string): Promise<string> {
-    if (!text || text.trim() === "") return "";
+    if (!text.trim()) {
+      return "";
+    }
+
     try {
       console.log(`[Google Translate] Đang dịch: "${text.slice(0, 50)}..."`);
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=vi&dt=t&q=${encodeURIComponent(text)}`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`Google Translate status: ${res.status}`);
-      const json = await res.json() as any;
-      if (Array.isArray(json) && Array.isArray(json[0])) {
-        return json[0].map((item: any) => item[0]).join("");
+
+      if (!res.ok) {
+        throw new Error(`Google Translate status: ${res.status}`);
       }
+
+      const json = (await res.json()) as unknown;
+      if (this.isGoogleTranslateResponse(json)) {
+        return this.normalizeDevTerms(json[0].map((item) => item[0]).join(""));
+      }
+
       return text;
     } catch (error) {
       console.error("Lỗi Google Translate:", error);
@@ -27,25 +117,43 @@ export class AIService {
     }
   }
 
-  static async getFallback(title: string, content: string): Promise<AIProcessedResult> {
-    const cleanContent = content ? content.replace(/<[^>]*>/g, "").trim() : "";
-    const isLinkOnly = !cleanContent || cleanContent.toLowerCase().includes("article url:") || cleanContent.startsWith("http");
-    const summary = isLinkOnly
-      ? "Không có nội dung mô tả chi tiết."
-      : (cleanContent.length > 200 ? cleanContent.slice(0, 200) + "..." : cleanContent);
+  static async getFallback(
+    title: string,
+    content: string,
+    source = "Unknown",
+    publishedAt = new Date(),
+  ): Promise<AIProcessedResult> {
+    const baseline = this.inferArticleMetadata(title, content, source, publishedAt);
+    const cleanContent = this.cleanContent(content);
+    const summarySeed = cleanContent
+      ? this.truncate(cleanContent, 350)
+      : "Bài viết không cung cấp mô tả chi tiết trong RSS.";
 
-    const [titleVi, summaryVi] = await Promise.all([
+    const [titleVi, translatedSummary] = await Promise.all([
       this.translateWithGoogle(title),
-      isLinkOnly ? Promise.resolve(summary) : this.translateWithGoogle(summary),
+      this.translateWithGoogle(summarySeed),
     ]);
 
     return {
-      titleVi,
-      summaryVi,
-      category: "other",
-      tags: [],
-      importanceScore: 50,
+      titleVi: titleVi || title,
+      summaryVi: this.formatFallbackSummary(translatedSummary, source, baseline),
+      ...baseline,
     };
+  }
+
+  private static isProviderConfigured(provider: AiProvider): boolean {
+    switch (provider) {
+      case "gemini":
+        return !!env.geminiApiKey;
+      case "openai":
+        return !!env.openaiApiKey;
+      case "groq":
+        return !!env.groqApiKey;
+      case "openrouter":
+        return !!env.openrouterApiKey;
+      default:
+        return false;
+    }
   }
 
   static async processArticle(
@@ -53,18 +161,250 @@ export class AIService {
     content: string,
     source: string,
     url: string,
+    publishedAt = new Date(),
   ): Promise<AIProcessedResult> {
-    const provider = env.aiProvider;
+    const primaryProvider = env.aiProvider;
+    const providersToTry: AiProvider[] = [primaryProvider];
 
-    switch (provider) {
-      case "openai":
-        return this.processWithOpenAI(title, content, source, url);
-      case "groq":
-        return this.processWithGroq(title, content, source, url);
-      case "gemini":
-      default:
-        return this.processWithGemini(title, content, source, url);
+    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
+    for (const p of allProviders) {
+      if (p !== primaryProvider && this.isProviderConfigured(p)) {
+        providersToTry.push(p);
+      }
     }
+
+    console.log(`[AI Failover] Thứ tự thử nghiệm các AI: ${providersToTry.join(" -> ")}`);
+
+    for (const provider of providersToTry) {
+      try {
+        console.log(`[AI] Đang xử lý bài viết "${title.slice(0, 45)}..." bằng: ${provider}`);
+        let result: AIProcessedResult;
+        switch (provider) {
+          case "openai":
+            result = await this.processWithOpenAI(title, content, source, url, publishedAt);
+            break;
+          case "groq":
+            result = await this.processWithGroq(title, content, source, url, publishedAt);
+            break;
+          case "openrouter":
+            result = await this.processWithOpenRouter(title, content, source, url, publishedAt);
+            break;
+          case "gemini":
+          default:
+            result = await this.processWithGemini(title, content, source, url, publishedAt);
+            break;
+        }
+        console.log(`[AI Failover] Xử lý thành công bằng: ${provider}`);
+        // AI trả tiếng Anh, dùng Google Translate dịch sang tiếng Việt
+        const [translatedTitle, translatedSummary, translatedReason] = await Promise.all([
+          this.translateWithGoogle(result.titleVi),
+          this.translateWithGoogle(result.summaryVi),
+          this.translateWithGoogle(result.importanceReason),
+        ]);
+        return {
+          ...result,
+          titleVi: this.normalizeDevTerms(translatedTitle || result.titleVi),
+          summaryVi: this.normalizeDevTerms(translatedSummary || result.summaryVi),
+          importanceReason: translatedReason || result.importanceReason,
+        };
+      } catch (error) {
+        console.warn(`[AI Failover] Thất bại với ${provider}. Lỗi: ${(error as Error).message}`);
+      }
+    }
+
+    console.warn("[AI Failover] Tất cả các nhà cung cấp AI đều thất bại. Sử dụng rule-based fallback.");
+    return this.getFallback(title, content, source, publishedAt);
+  }
+
+  /**
+   * Xử lý nhiều bài viết trong một lần gọi AI duy nhất.
+   * Tiết kiệm API quota bằng cách gộp tối đa 5 bài/prompt.
+   * Nếu batch thất bại, sẽ fallback về xử lý từng bài riêng lẻ.
+   */
+  static async processArticleBatch(
+    articles: Array<{ title: string; content: string; source: string; url: string; publishedAt: Date }>,
+  ): Promise<AIProcessedResult[]> {
+    if (articles.length === 0) return [];
+    if (articles.length === 1) {
+      const a = articles[0];
+      return [await this.processArticle(a.title, a.content, a.source, a.url, a.publishedAt)];
+    }
+
+    const batchPrompt = this.buildBatchPrompt(articles);
+
+    const primaryProvider = env.aiProvider;
+    const providersToTry: AiProvider[] = [primaryProvider];
+    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
+    for (const p of allProviders) {
+      if (p !== primaryProvider && this.isProviderConfigured(p)) {
+        providersToTry.push(p);
+      }
+    }
+
+    console.log(`[AI Batch] Xử lý ${articles.length} bài cùng lúc. Thứ tự: ${providersToTry.join(" -> ")}`);
+
+    for (const provider of providersToTry) {
+      try {
+        console.log(`[AI Batch] Đang gửi batch ${articles.length} bài tới: ${provider}`);
+        let rawResult: unknown;
+
+        switch (provider) {
+          case "openai":
+            rawResult = await this.callChatCompletion(
+              "https://api.openai.com/v1/chat/completions",
+              env.openaiApiKey,
+              env.openaiModel,
+              batchPrompt,
+            );
+            break;
+          case "groq":
+            rawResult = await this.callChatCompletion(
+              "https://api.groq.com/openai/v1/chat/completions",
+              env.groqApiKey,
+              env.groqModel,
+              batchPrompt,
+            );
+            break;
+          case "openrouter":
+            rawResult = await this.callChatCompletion(
+              "https://openrouter.ai/api/v1/chat/completions",
+              env.openrouterApiKey,
+              env.openrouterModel,
+              batchPrompt,
+              { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" },
+            );
+            break;
+          case "gemini":
+          default:
+            rawResult = await this.callGeminiBatch(batchPrompt);
+            break;
+        }
+
+        const parsed = this.parseBatchResult(rawResult, articles);
+        if (parsed) {
+          console.log(`[AI Batch] Batch xử lý thành công bằng: ${provider}`);
+          return parsed;
+        }
+      } catch (error) {
+        console.warn(`[AI Batch] Thất bại với ${provider}. Lỗi: ${(error as Error).message}`);
+      }
+    }
+
+    // Fallback: xử lý từng bài riêng lẻ
+    console.warn("[AI Batch] Batch thất bại. Chuyển sang xử lý từng bài riêng lẻ.");
+    const results: AIProcessedResult[] = [];
+    for (const a of articles) {
+      results.push(await this.processArticle(a.title, a.content, a.source, a.url, a.publishedAt));
+    }
+    return results;
+  }
+
+  private static buildBatchPrompt(
+    articles: Array<{ title: string; content: string; source: string; url: string }>,
+  ): string {
+    const articlesJson = articles.map((a, i) => ({
+      index: i,
+      title: a.title,
+      content: this.truncate(this.cleanContent(a.content), 500),
+      source: a.source,
+      url: a.url,
+    }));
+
+    return `${TECH_NEWS_PROMPT}
+
+Process ALL of the following ${articles.length} articles and return a JSON object with key "articles" containing an array of results in the SAME order.
+Each element must match the schema: { titleVi, summaryVi, category, tags, importanceScore, importanceReason }.
+
+Articles:
+${JSON.stringify(articlesJson, null, 2)}`;
+  }
+
+  private static async callChatCompletion(
+    endpoint: string,
+    apiKey: string,
+    model: string,
+    prompt: string,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<unknown> {
+    if (!apiKey) throw new Error(`API key chưa được cấu hình cho ${endpoint}`);
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        ...extraHeaders,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: TECH_NEWS_PROMPT },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`API returned status ${response.status}: ${errText}`);
+    }
+
+    const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error("Không nhận được nội dung từ API.");
+    return JSON.parse(content);
+  }
+
+  private static async callGeminiBatch(prompt: string): Promise<unknown> {
+    if (!env.geminiApiKey) throw new Error("GEMINI_API_KEY chưa được cấu hình.");
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${env.geminiModel}:generateContent?key=${env.geminiApiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.3,
+          },
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini API returned status ${response.status}: ${errText}`);
+    }
+
+    const data = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("Không nhận được nội dung từ Gemini API.");
+    return JSON.parse(text);
+  }
+
+  private static parseBatchResult(
+    raw: unknown,
+    articles: Array<{ title: string; content: string; source: string; publishedAt: Date }>,
+  ): AIProcessedResult[] | null {
+    if (!this.isRecord(raw)) return null;
+    const arr = Array.isArray(raw.articles) ? raw.articles : null;
+    if (!arr || arr.length !== articles.length) return null;
+
+    return arr.map((item: unknown, i: number) => {
+      return this.validateAndNormalizeResult(
+        item,
+        articles[i].title,
+        articles[i].content,
+        articles[i].source,
+        articles[i].publishedAt,
+      );
+    });
   }
 
   private static async processWithGemini(
@@ -72,10 +412,10 @@ export class AIService {
     content: string,
     source: string,
     url: string,
+    publishedAt: Date,
   ): Promise<AIProcessedResult> {
     if (!env.geminiApiKey) {
-      console.warn("Cảnh báo: GEMINI_API_KEY chưa được cấu hình. Sử dụng dữ liệu mặc định (fallback).");
-      return this.getFallback(title, content);
+      throw new Error("GEMINI_API_KEY chưa được cấu hình.");
     }
 
     try {
@@ -92,24 +432,10 @@ export class AIService {
                 role: "user",
                 parts: [
                   {
-                    text: `You are an expert IT translator and technical editor. Your task is to process a tech news article and return a clean JSON object matching the schema.
-Follow these constraints strictly:
-1. Translate both the title ("titleVi") and summary ("summaryVi") into professional Vietnamese. Do NOT translate word-for-word.
-2. Keep familiar technical terms in English (e.g., API, thread, garbage collection, runtime, framework, deployment, repository, frontend, backend, database).
-3. "summaryVi" MUST be a bulleted list of 3 to 5 short key points written in Vietnamese. It must summarize the actual news/technical topic. Do NOT copy the article URL, links, or metadata into the summary.
-4. "category" must be strictly one of: "ai", "backend", "frontend", "devops", "security", "mobile", "career", or "other".
-5. "tags" must be an array of relevant technology tags (e.g., ["nodejs", "mongodb", "concurrency"]).
-6. "importanceScore" must be an integer between 1 and 100 based on the technical value and impact of the news.
-7. If the content/description is short, missing, or only contains metadata/links (e.g. "Article URL: ..."), you MUST analyze and infer the news topic based on the title, and write a 3 to 5 bullet point summary in Vietnamese explaining the significance of that news topic. Never output the URL, metadata, or English placeholders as the summary.
-
-Article details to process:
-Title: ${title}
-Content: ${content}
-Source: ${source}
-URL: ${url}`
-                  }
-                ]
-              }
+                    text: this.buildArticlePrompt(title, content, source, url),
+                  },
+                ],
+              },
             ],
             generationConfig: {
               responseMimeType: "application/json",
@@ -120,20 +446,21 @@ URL: ${url}`
                   summaryVi: { type: "STRING" },
                   category: {
                     type: "STRING",
-                    enum: ["ai", "backend", "frontend", "devops", "security", "mobile", "career", "other"]
+                    enum: CATEGORY_OPTIONS,
                   },
                   tags: {
                     type: "ARRAY",
-                    items: { type: "STRING" }
+                    items: { type: "STRING" },
                   },
-                  importanceScore: { type: "INTEGER" }
+                  importanceScore: { type: "INTEGER" },
+                  importanceReason: { type: "STRING" },
                 },
-                required: ["titleVi", "summaryVi", "category", "tags", "importanceScore"]
+                required: ["titleVi", "summaryVi", "category", "tags", "importanceScore", "importanceReason"],
               },
-              temperature: 0.3
-            }
-          })
-        }
+              temperature: 0.3,
+            },
+          }),
+        },
       );
 
       if (!response.ok) {
@@ -141,17 +468,19 @@ URL: ${url}`
         throw new Error(`Gemini API returned status ${response.status}: ${errText}`);
       }
 
-      const data = (await response.json()) as any;
-      const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const data = (await response.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!responseText) {
         throw new Error("Không nhận được nội dung văn bản từ Gemini API.");
       }
 
-      const result = JSON.parse(responseText) as AIProcessedResult;
-      return this.validateAndNormalizeResult(result, title, content);
+      const result = JSON.parse(responseText) as unknown;
+      return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng Gemini (${env.geminiModel}):`, error);
-      return this.getFallback(title, content);
+      throw error;
     }
   }
 
@@ -160,10 +489,10 @@ URL: ${url}`
     content: string,
     source: string,
     url: string,
+    publishedAt: Date,
   ): Promise<AIProcessedResult> {
     if (!env.openaiApiKey) {
-      console.warn("Cảnh báo: OPENAI_API_KEY chưa được cấu hình. Sử dụng dữ liệu mặc định (fallback).");
-      return this.getFallback(title, content);
+      throw new Error("OPENAI_API_KEY chưa được cấu hình.");
     }
 
     try {
@@ -178,25 +507,7 @@ URL: ${url}`
           messages: [
             {
               role: "system",
-              content: `You are an expert IT translator and technical editor. Your task is to process a tech news article and return a clean JSON object matching the schema.
-Follow these constraints strictly:
-1. Translate both the title ("titleVi") and summary ("summaryVi") into professional Vietnamese. Do NOT translate word-for-word.
-2. Keep familiar technical terms in English (e.g., API, thread, garbage collection, runtime, framework, deployment, repository, frontend, backend, database).
-3. "summaryVi" MUST be a bulleted list of 3 to 5 short key points written in Vietnamese. It must summarize the actual news/technical topic. Do NOT copy the article URL, links, or metadata into the summary.
-4. "category" must be strictly one of: "ai", "backend", "frontend", "devops", "security", "mobile", "career", or "other".
-5. "tags" must be an array of relevant technology tags (e.g., ["nodejs", "mongodb", "concurrency"]).
-6. "importanceScore" must be an integer between 1 and 100 based on the technical value and impact of the news.
-7. If the content/description is short, missing, or only contains metadata/links (e.g. "Article URL: ..."), you MUST analyze and infer the news topic based on the title, and write a 3 to 5 bullet point summary in Vietnamese explaining the significance of that news topic. Never output the URL, metadata, or English placeholders as the summary.
-8. Output ONLY a valid JSON object matching the requested schema. No conversational text, no markdown block syntax.
-
-JSON Schema format:
-{
-  "titleVi": "string",
-  "summaryVi": "string",
-  "category": "ai | backend | frontend | devops | security | mobile | career | other",
-  "tags": ["string"],
-  "importanceScore": number
-}`,
+              content: TECH_NEWS_PROMPT,
             },
             {
               role: "user",
@@ -213,17 +524,19 @@ JSON Schema format:
         throw new Error(`OpenAI API returned status ${response.status}: ${errText}`);
       }
 
-      const data = (await response.json()) as any;
-      const choiceContent = data?.choices?.[0]?.message?.content;
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const choiceContent = data.choices?.[0]?.message?.content;
       if (!choiceContent) {
         throw new Error("Không nhận được nội dung từ OpenAI API.");
       }
 
-      const result = JSON.parse(choiceContent) as AIProcessedResult;
-      return this.validateAndNormalizeResult(result, title, content);
+      const result = JSON.parse(choiceContent) as unknown;
+      return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng OpenAI (${env.openaiModel}):`, error);
-      return this.getFallback(title, content);
+      throw error;
     }
   }
 
@@ -232,10 +545,10 @@ JSON Schema format:
     content: string,
     source: string,
     url: string,
+    publishedAt: Date,
   ): Promise<AIProcessedResult> {
     if (!env.groqApiKey) {
-      console.warn("Cảnh báo: GROQ_API_KEY chưa được cấu hình. Sử dụng dữ liệu mặc định (fallback).");
-      return this.getFallback(title, content);
+      throw new Error("GROQ_API_KEY chưa được cấu hình.");
     }
 
     try {
@@ -250,25 +563,7 @@ JSON Schema format:
           messages: [
             {
               role: "system",
-              content: `You are an expert IT translator and technical editor. Your task is to process a tech news article and return a clean JSON object matching the schema.
-Follow these constraints strictly:
-1. Translate both the title ("titleVi") and summary ("summaryVi") into professional Vietnamese. Do NOT translate word-for-word.
-2. Keep familiar technical terms in English (e.g., API, thread, garbage collection, runtime, framework, deployment, repository, frontend, backend, database).
-3. "summaryVi" MUST be a bulleted list of 3 to 5 short key points written in Vietnamese. It must summarize the actual news/technical topic. Do NOT copy the article URL, links, or metadata into the summary.
-4. "category" must be strictly one of: "ai", "backend", "frontend", "devops", "security", "mobile", "career", or "other".
-5. "tags" must be an array of relevant technology tags (e.g., ["nodejs", "mongodb", "concurrency"]).
-6. "importanceScore" must be an integer between 1 and 100 based on the technical value and impact of the news.
-7. If the content/description is short, missing, or only contains metadata/links (e.g. "Article URL: ..."), you MUST analyze and infer the news topic based on the title, and write a 3 to 5 bullet point summary in Vietnamese explaining the significance of that news topic. Never output the URL, metadata, or English placeholders as the summary.
-8. Output ONLY a valid JSON object matching the requested schema. No conversational text, no markdown block syntax.
-
-JSON Schema format:
-{
-  "titleVi": "string",
-  "summaryVi": "string",
-  "category": "ai | backend | frontend | devops | security | mobile | career | other",
-  "tags": ["string"],
-  "importanceScore": number
-}`,
+              content: TECH_NEWS_PROMPT,
             },
             {
               role: "user",
@@ -285,44 +580,335 @@ JSON Schema format:
         throw new Error(`Groq API returned status ${response.status}: ${errText}`);
       }
 
-      const data = (await response.json()) as any;
-      const choiceContent = data?.choices?.[0]?.message?.content;
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const choiceContent = data.choices?.[0]?.message?.content;
       if (!choiceContent) {
         throw new Error("Không nhận được nội dung từ Groq API.");
       }
 
-      const result = JSON.parse(choiceContent) as AIProcessedResult;
-      return this.validateAndNormalizeResult(result, title, content);
+      const result = JSON.parse(choiceContent) as unknown;
+      return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng Groq (${env.groqModel}):`, error);
-      return this.getFallback(title, content);
+      throw error;
     }
   }
 
-  private static validateAndNormalizeResult(
-    result: any,
+  private static async processWithOpenRouter(
     title: string,
     content: string,
-  ): AIProcessedResult {
-    const categoryOptions = ["ai", "backend", "frontend", "devops", "security", "mobile", "career", "other"];
-    const category = (categoryOptions.includes(result?.category) ? result.category : "other") as AIProcessedResult["category"];
+    source: string,
+    url: string,
+    publishedAt: Date,
+  ): Promise<AIProcessedResult> {
+    if (!env.openrouterApiKey) {
+      throw new Error("OPENROUTER_API_KEY chưa được cấu hình.");
+    }
 
-    let summaryVi = typeof result?.summaryVi === "string" ? result.summaryVi.trim() : "";
-    const isLinkOnly = !summaryVi || summaryVi.toLowerCase().includes("article url:") || summaryVi.startsWith("http");
-    if (isLinkOnly) {
-      const cleanContent = content ? content.replace(/<[^>]*>/g, "").trim() : "";
-      const isContentLink = !cleanContent || cleanContent.toLowerCase().includes("article url:") || cleanContent.startsWith("http");
-      summaryVi = isContentLink ? "Không có nội dung mô tả chi tiết." : cleanContent;
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${env.openrouterApiKey}`,
+          "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+          "X-Title": "Chatbot News Telegram",
+        },
+        body: JSON.stringify({
+          model: env.openrouterModel,
+          messages: [
+            {
+              role: "system",
+              content: TECH_NEWS_PROMPT,
+            },
+            {
+              role: "user",
+              content: this.buildArticlePrompt(title, content, source, url),
+            },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`OpenRouter API returned status ${response.status}: ${errText}`);
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const choiceContent = data.choices?.[0]?.message?.content;
+      if (!choiceContent) {
+        throw new Error("Không nhận được nội dung từ OpenRouter API.");
+      }
+
+      const result = JSON.parse(choiceContent) as unknown;
+      return this.validateAndNormalizeResult(result, title, content, source, publishedAt);
+    } catch (error) {
+      console.error(`Lỗi khi xử lý bài viết bằng OpenRouter (${env.openrouterModel}):`, error);
+      throw error;
+    }
+  }
+
+  private static buildArticlePrompt(
+    title: string,
+    content: string,
+    source: string,
+    url: string,
+  ): string {
+    return `${TECH_NEWS_PROMPT}\n\nArticle details to process:\nTitle: ${title}\nContent: ${content}\nSource: ${source}\nURL: ${url}`;
+  }
+
+  private static validateAndNormalizeResult(
+    result: unknown,
+    title: string,
+    content: string,
+    source: string,
+    publishedAt: Date,
+  ): AIProcessedResult {
+    const baseline = this.inferArticleMetadata(title, content, source, publishedAt);
+    const raw = this.isRecord(result) ? result : {};
+    const category = this.isCategory(raw.category) ? raw.category : baseline.category;
+    const aiScore = this.readScore(raw.importanceScore);
+    const importanceScore = aiScore === null
+      ? baseline.importanceScore
+      : this.clampScore(aiScore, baseline.importanceScore - 25, baseline.importanceScore + 25);
+
+    // AI trả tiếng Anh (field "title" và "summary"), giữ nguyên để dịch sau
+    let summaryEn = typeof raw.summary === "string" ? raw.summary.trim() : "";
+    if (!summaryEn || summaryEn.toLowerCase().includes("article url:") || summaryEn.startsWith("http")) {
+      summaryEn = this.truncate(this.cleanContent(content), 350) || "No detailed description available.";
+    }
+
+    const titleEn = typeof raw.title === "string" && raw.title.trim()
+      ? raw.title.trim()
+      : title;
+    const tags = Array.from(new Set([
+      ...this.normalizeTags(raw.tags),
+      ...baseline.tags,
+    ])).slice(0, 10);
+    const importanceReason = typeof raw.importanceReason === "string" && raw.importanceReason.trim()
+      ? raw.importanceReason.trim()
+      : baseline.importanceReason;
+
+    return {
+      titleVi: titleEn,
+      summaryVi: summaryEn,
+      category,
+      tags,
+      importanceScore,
+      importanceReason,
+    };
+  }
+
+  private static inferArticleMetadata(
+    title: string,
+    content: string,
+    source: string,
+    publishedAt: Date,
+  ): InferredMetadata {
+    const text = `${title} ${this.cleanContent(content)}`.toLowerCase();
+    const tags = new Set<string>();
+    const categoryScores = new Map<ArticleCategory, number>();
+    let keywordScore = 0;
+
+    for (const rule of KEYWORD_RULES) {
+      if (rule.keywords.some((keyword) => this.includesKeyword(text, keyword))) {
+        tags.add(rule.tag);
+        keywordScore += rule.score;
+        categoryScores.set(rule.category, (categoryScores.get(rule.category) || 0) + rule.score);
+      }
+    }
+
+    const category = this.pickCategory(source, categoryScores);
+    const sourceScore = SOURCE_SCORES[source] ?? 8;
+    const freshnessScore = this.getFreshnessScore(publishedAt);
+    const categoryBoost = category === "security" ? 10 : category === "ai" ? 8 : ["backend", "devops"].includes(category) ? 5 : 0;
+    const importanceScore = this.clampScore(
+      25 + sourceScore + Math.min(keywordScore, 35) + freshnessScore + categoryBoost,
+    );
+
+    if (tags.size === 0 && category !== "other") {
+      tags.add(category);
     }
 
     return {
-      titleVi: typeof result?.titleVi === "string" ? result.titleVi.trim() : title,
-      summaryVi,
       category,
-      tags: Array.isArray(result?.tags) ? result.tags.map((t: any) => String(t).trim().toLowerCase()) : [],
-      importanceScore: typeof result?.importanceScore === "number" && !Number.isNaN(result.importanceScore)
-        ? Math.min(Math.max(Math.round(result.importanceScore), 1), 100)
-        : 50,
+      tags: Array.from(tags).slice(0, 8),
+      importanceScore,
+      importanceReason: this.buildImportanceReason(source, category, Array.from(tags), freshnessScore),
     };
+  }
+
+  private static pickCategory(
+    source: string,
+    categoryScores: Map<ArticleCategory, number>,
+  ): ArticleCategory {
+    let bestCategory: ArticleCategory = this.categoryFromSource(source);
+    let bestScore = 0;
+
+    for (const [category, score] of categoryScores.entries()) {
+      if (category !== "other" && score > bestScore) {
+        bestCategory = category;
+        bestScore = score;
+      }
+    }
+
+    return bestCategory;
+  }
+
+  private static categoryFromSource(source: string): ArticleCategory {
+    if (["OpenAI Blog", "Hugging Face Blog"].includes(source)) {
+      return "ai";
+    }
+
+    if (["React Blog", "Vercel Blog"].includes(source)) {
+      return "frontend";
+    }
+
+    if (["Cloudflare Changelog", "AWS What's New", "GitHub Blog"].includes(source)) {
+      return "devops";
+    }
+
+    return "other";
+  }
+
+  private static getFreshnessScore(publishedAt: Date): number {
+    const ageMs = Date.now() - publishedAt.getTime();
+    const ageHours = ageMs / (60 * 60 * 1000);
+
+    if (!Number.isFinite(ageHours) || ageHours < 0) {
+      return 10;
+    }
+
+    if (ageHours <= 24) {
+      return 12;
+    }
+
+    if (ageHours <= 72) {
+      return 8;
+    }
+
+    if (ageHours <= 168) {
+      return 4;
+    }
+
+    return 0;
+  }
+
+  private static buildImportanceReason(
+    source: string,
+    category: ArticleCategory,
+    tags: string[],
+    freshnessScore: number,
+  ): string {
+    const reasons = [`Nguồn ${source} có độ liên quan với developer`];
+
+    if (category !== "other") {
+      reasons.push(`bài thuộc nhóm ${category}`);
+    }
+
+    if (tags.length > 0) {
+      reasons.push(`có tín hiệu về ${tags.slice(0, 3).join(", ")}`);
+    }
+
+    if (freshnessScore >= 8) {
+      reasons.push("tin còn mới");
+    }
+
+    return `${reasons.join(", ")}.`;
+  }
+
+  private static formatFallbackSummary(
+    summary: string,
+    source: string,
+    metadata: InferredMetadata,
+  ): string {
+    const detail = summary.trim() || "Bài viết không cung cấp mô tả chi tiết trong RSS.";
+    const tags = metadata.tags.length > 0 ? metadata.tags.join(", ") : "chưa xác định";
+
+    return [
+      `- ${detail}`,
+      `- Nguồn: ${source}; phân loại tạm: ${metadata.category}; tags: ${tags}.`,
+      "- Tóm tắt này được tạo bằng fallback rule-based vì AI không khả dụng hoặc trả lỗi.",
+    ].join("\n");
+  }
+
+  private static cleanContent(content: string): string {
+    return content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  private static truncate(text: string, maxLength: number): string {
+    return text.length > maxLength ? `${text.slice(0, maxLength).trim()}...` : text;
+  }
+
+  private static normalizeTags(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((tag) => String(tag).trim().toLowerCase().replace(/\s+/g, "-"))
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
+  private static normalizeDevTerms(text: string): string {
+    const replacements: Array<[RegExp, string]> = [
+      [/khung làm việc/gi, "framework"],
+      [/thời gian chạy/gi, "runtime"],
+      [/kho lưu trữ/gi, "repository"],
+      [/yêu cầu kéo/gi, "pull request"],
+      [/bộ nhớ đệm/gi, "cache"],
+      [/thu gom rác/gi, "garbage collection"],
+      [/rò rỉ bộ nhớ/gi, "memory leak"],
+      [/không máy chủ/gi, "serverless"],
+    ];
+
+    return replacements.reduce((current, [pattern, replacement]) => {
+      return current.replace(pattern, replacement);
+    }, text);
+  }
+
+  private static includesKeyword(text: string, keyword: string): boolean {
+    if (keyword.length <= 3) {
+      return new RegExp(`\\b${this.escapeRegex(keyword)}\\b`, "i").test(text);
+    }
+
+    return text.includes(keyword.toLowerCase());
+  }
+
+  private static escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  private static readScore(value: unknown): number | null {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return null;
+    }
+
+    return this.clampScore(value);
+  }
+
+  private static clampScore(value: number, min = 1, max = 100): number {
+    return Math.min(Math.max(Math.round(value), min), max);
+  }
+
+  private static isCategory(value: unknown): value is ArticleCategory {
+    return typeof value === "string" && CATEGORY_OPTIONS.includes(value as ArticleCategory);
+  }
+
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+  }
+
+  private static isGoogleTranslateResponse(value: unknown): value is GoogleTranslateResponse {
+    return Array.isArray(value)
+      && Array.isArray(value[0])
+      && value[0].every((item) => Array.isArray(item) && typeof item[0] === "string");
   }
 }

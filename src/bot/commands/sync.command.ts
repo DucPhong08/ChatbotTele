@@ -20,7 +20,7 @@ export function registerSyncCommand(
       return;
     }
 
-    await ctx.reply("🔄 Đang tiến hành thu thập tin tức mới bằng AI...");
+    await ctx.reply("Đang tiến hành thu thập tin tức mới bằng AI...");
 
     try {
       const newArticles = await collector.collect();
@@ -30,8 +30,21 @@ export function registerSyncCommand(
         return;
       }
 
+      const notifyArticles = newArticles.filter((article) => {
+        const score =
+          typeof article.importanceScore === "number" ? article.importanceScore : 50;
+        return score >= env.notificationMinScore;
+      });
+
+      if (notifyArticles.length === 0) {
+        await ctx.reply(
+          `Đã thu thập thêm ${newArticles.length} bài viết mới, nhưng chưa có bài nào đạt ngưỡng gửi ${env.notificationMinScore}/100.`,
+        );
+        return;
+      }
+
       // Sắp xếp các bài viết mới thu thập được theo tầm quan trọng giảm dần và lấy tối đa 10 bài
-      const sortedNew = [...newArticles].sort((a, b) => {
+      const sortedNew = [...notifyArticles].sort((a, b) => {
         const scoreA =
           typeof a.importanceScore === "number" ? a.importanceScore : 50;
         const scoreB =

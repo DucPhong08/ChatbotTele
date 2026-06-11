@@ -1,14 +1,10 @@
 import Parser from "rss-parser";
-import { type CreateNewsInput, NewsService } from "./news.service";
+import { NewsService } from "./news.service";
+import { type CreateNewsInput } from "../types/news";
 import { NewsModel } from "./news.model";
 import { AIService } from "../ai/ai.service";
 
-type FeedConfig = {
-  source: string;
-  url: string;
-  category: string;
-  skills: string[];
-};
+import { feeds } from "./feeds.config";
 
 type RssFeed = Record<string, unknown>;
 
@@ -22,86 +18,13 @@ type RssItem = {
   categories?: string[];
 };
 
-const feeds: FeedConfig[] = [
-  // Tổng hợp tin dev
-  {
-    source: "Hacker News",
-    url: "https://hnrss.org/frontpage",
-    category: "general",
-    skills: ["startup", "engineering", "programming", "ai"],
-  },
-  {
-    source: "Dev.to",
-    url: "https://dev.to/feed",
-    category: "general",
-    skills: ["javascript", "typescript", "web", "backend"],
-  },
-  {
-    source: "GitHub Blog",
-    url: "https://github.blog/feed/",
-    category: "general",
-    skills: ["github", "open-source", "developer-tools", "ai"],
-  },
-
-  // JavaScript / TypeScript / Node.js
-  // {
-  //   source: "Node.js Blog",
-  //   url: "https://nodejs.org/en/feed/blog.xml",
-  //   category: "backend",
-  //   skills: ["nodejs", "javascript", "backend", "runtime"],
-  // },
-  // {
-  //   source: "JavaScript Weekly",
-  //   url: "https://javascriptweekly.com/rss",
-  //   category: "backend",
-  //   skills: ["javascript", "typescript", "web"],
-  // },
-
-  // Frontend
-  {
-    source: "React Blog",
-    url: "https://react.dev/blog/rss.xml",
-    category: "frontend",
-    skills: ["react", "frontend", "javascript"],
-  },
-  {
-    source: "Vercel Blog",
-    url: "https://vercel.com/blog/rss",
-    category: "frontend",
-    skills: ["nextjs", "frontend", "deployment", "web"],
-  },
-
-  // Cloud / DevOps
-  {
-    source: "Cloudflare Changelog",
-    url: "https://developers.cloudflare.com/changelog/rss.xml",
-    category: "devops",
-    skills: ["cloudflare", "edge", "security", "deployment"],
-  },
-  {
-    source: "AWS What's New",
-    url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/",
-    category: "devops",
-    skills: ["aws", "cloud", "infrastructure"],
-  },
-
-  // AI / LLM
-  {
-    source: "OpenAI Blog",
-    url: "https://openai.com/news/rss.xml",
-    category: "ai",
-    skills: ["ai", "llm", "agents", "api"],
-  },
-  {
-    source: "Hugging Face Blog",
-    url: "https://huggingface.co/blog/feed.xml",
-    category: "ai",
-    skills: ["ai", "machine-learning", "open-source-models"],
-  },
-];
-
 export class NewsCollector {
-  private readonly parser = new Parser<RssFeed, RssItem>();
+  private readonly parser = new Parser<RssFeed, RssItem>({
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+  });
   private readonly lastFetchTimes = new Map<string, number>();
 
   constructor(private readonly newsService: NewsService) {}
@@ -114,9 +37,9 @@ export class NewsCollector {
       try {
         const now = Date.now();
         const lastFetch = this.lastFetchTimes.get(feed.url) || 0;
-        if (now - lastFetch < 5 * 60 * 1000) {
+        if (now - lastFetch < 3 * 60 * 1000) {
           console.log(
-            `Bỏ qua quét nguồn ${feed.source} do vừa mới quét cách đây ít hơn 5 phút (tránh Rate Limit 429).`,
+            `Bỏ qua quét nguồn ${feed.source} do vừa mới quét cách đây ít hơn 3 phút (tránh Rate Limit 429).`,
           );
           continue;
         }
@@ -124,44 +47,68 @@ export class NewsCollector {
 
         const parsedFeed = await this.parser.parseURL(feed.url);
 
-        for (const item of parsedFeed.items) {
-          const title = item.title?.trim();
-          const url = item.link?.trim();
+        const candidates = parsedFeed.items
+          .map((item) => {
+            const title = item.title?.trim();
+            const url = item.link?.trim();
 
-          if (!title || !url || seenUrls.has(url)) {
-            continue;
-          }
+            if (!title || !url || seenUrls.has(url)) {
+              return null;
+            }
 
-          // Kiểm tra xem url đã tồn tại trong database chưa
-          const exists = await NewsModel.exists({ url });
-          if (exists) {
-            continue;
-          }
+            seenUrls.add(url);
 
-          seenUrls.add(url);
+            return {
+              title,
+              url,
+              content:
+                item.contentSnippet?.trim() || item.content?.trim() || "",
+              publishedAt: this.parseDate(item.isoDate || item.pubDate),
+            };
+          })
+          .filter((item): item is NonNullable<typeof item> => item !== null);
 
-          const content =
-            item.contentSnippet?.trim() || item.content?.trim() || "";
+        const existingItems = await NewsModel.find({
+          url: { $in: candidates.map((item) => item.url) },
+        })
+          .select("url")
+          .lean<Array<{ url: string }>>()
+          .exec();
+        const existingUrls = new Set(existingItems.map((item) => item.url));
 
-          // Xử lý bài viết bằng AI
-          const aiResult = await AIService.processArticle(
-            title,
-            content,
-            feed.source,
-            url,
-          );
+        const newCandidates = candidates.filter((item) => !existingUrls.has(item.url));
 
-          collectedItems.push({
-            title: aiResult.titleVi,
-            url,
+        // Gộp bài viết thành nhóm 5 bài, gọi batch AI để tiết kiệm quota
+        for (let i = 0; i < newCandidates.length; i += 5) {
+          const batch = newCandidates.slice(i, i + 5);
+          const batchInput = batch.map((item) => ({
+            title: item.title,
+            content: item.content,
             source: feed.source,
-            publishedAt: this.parseDate(item.isoDate || item.pubDate),
-            summary: aiResult.summaryVi,
-            category: aiResult.category,
-            tags: aiResult.tags,
-            skills: feed.skills,
-            importanceScore: aiResult.importanceScore,
-          });
+            url: item.url,
+            publishedAt: item.publishedAt,
+          }));
+
+          const aiResults = await AIService.processArticleBatch(batchInput);
+
+          for (let j = 0; j < batch.length; j++) {
+            const item = batch[j];
+            const aiResult = aiResults[j];
+            if (!aiResult) continue;
+
+            collectedItems.push({
+              title: aiResult.titleVi,
+              url: item.url,
+              source: feed.source,
+              publishedAt: item.publishedAt,
+              summary: aiResult.summaryVi,
+              category: aiResult.category,
+              tags: aiResult.tags,
+              skills: feed.skills,
+              importanceScore: aiResult.importanceScore,
+              importanceReason: aiResult.importanceReason,
+            });
+          }
         }
       } catch (error) {
         console.error(
@@ -173,6 +120,38 @@ export class NewsCollector {
 
     await this.newsService.createManyIfNotExists(collectedItems);
     return collectedItems;
+  }
+
+  /**
+   * Xử lý song song với giới hạn concurrency.
+   * Tránh gọi quá nhiều AI request cùng lúc gây rate limit.
+   */
+  private async processPool<T, R>(
+    items: T[],
+    fn: (item: T) => Promise<R>,
+    concurrency: number,
+  ): Promise<R[]> {
+    const results: R[] = [];
+    let index = 0;
+
+    const worker = async () => {
+      while (index < items.length) {
+        const currentIndex = index++;
+        try {
+          const result = await fn(items[currentIndex]);
+          results.push(result);
+        } catch (error) {
+          console.error(`Lỗi khi xử lý bài viết song song:`, error);
+        }
+      }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(concurrency, items.length) },
+      () => worker(),
+    );
+    await Promise.all(workers);
+    return results;
   }
 
   private parseDate(value?: string): Date {

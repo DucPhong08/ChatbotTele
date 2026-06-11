@@ -1,10 +1,5 @@
 import { Schema, model, type HydratedDocument } from "mongoose";
-
-export interface Subscriber {
-  chatId: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { type Subscriber } from "../types/subscriber";
 
 export type SubscriberDocument = HydratedDocument<Subscriber>;
 

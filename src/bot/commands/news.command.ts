@@ -47,6 +47,7 @@ export function registerNewsCommand(
         `━━━━━━━━━━━━━━━━━━━━`,
         `<b>Tiêu đề:</b> ${escapeHtml(item.title)}`,
         `<b>Nguồn:</b> ${item.source} | <b>Đánh giá:</b> ${item.importanceScore || 50}/100`,
+        item.importanceReason ? `<b>Lý do đánh giá:</b> ${escapeHtml(item.importanceReason)}` : "",
         item.category ? `<b>Danh mục:</b> #_${item.category.toUpperCase()}` : "",
         item.tags && item.tags.length > 0 ? `<b>Thẻ (Tags):</b> ${item.tags.map(t => `#${t}`).join(", ")}` : "",
         item.skills && item.skills.length > 0 ? `<b>Kỹ năng (Skills):</b> ${item.skills.map(s => `<code>${s}</code>`).join(", ")}` : "",
