@@ -72,7 +72,7 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
         const detailText = formatNewsDetail(item);
 
         const keyboard = new InlineKeyboard()
-          .text("Xem tóm tắt chi tiết từ AI 🤖", `summarize_${newsId}`)
+          .text("Xem tóm tắt chi tiết từ AI", `summarize_${newsId}`)
           .text("Quay lại danh sách", "back_to_list");
 
         await ctx.reply(detailText, {
@@ -94,21 +94,21 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
       const isAdmin = env.adminChatIds.includes(chatId);
 
       let welcomeMessage =
-        "🤖 <b>CHÀO MỪNG BẠN ĐẾN VỚI TECHDEVNEWS BOT</b>\n" +
+        "<b>CHÀO MỪNG BẠN ĐẾN VỚI TECHDEVNEWS BOT</b>\n" +
         "━━━━━━━━━━━━━━━━━━━━\n" +
         "Bạn đã đăng ký nhận tin tự động thành công! Bot sẽ tự động gửi các bài viết công nghệ mới nhất cho bạn.\n\n" +
-        "📌 <b>CÁC LỆNH DÀNH CHO BẠN:</b>\n" +
-        "• <code>/news</code> - Xem 5 bài viết mới nhất.\n" +
-        "• <code>/news [trang]</code> - Xem tin ở các trang tiếp theo (ví dụ: <code>/news 2</code>).\n" +
-        "• <code>/stop</code> - Hủy nhận tin tức tự động.\n" +
-        "• <code>/start</code> - Đăng ký lại và hiển thị hướng dẫn này.";
+        "<b>CÁC LỆNH DÀNH CHO BẠN:</b>\n" +
+        "- <code>/news</code> - Xem 5 bài viết mới nhất.\n" +
+        "- <code>/news [trang]</code> - Xem tin ở các trang tiếp theo (ví dụ: <code>/news 2</code>).\n" +
+        "- <code>/stop</code> - Hủy nhận tin tức tự động.\n" +
+        "- <code>/start</code> - Đăng ký lại và hiển thị hướng dẫn này.";
 
       if (isAdmin) {
         welcomeMessage +=
-          "\n\n⚙️ <b>CÁC LỆNH DÀNH CHO ADMIN:</b>\n" +
-          "• <code>/sync</code> - Quét nguồn tin tức mới và phát sóng (broadcast) ngay lập tức.\n" +
-          "• <code>/stats</code> - Xem thống kê hệ thống (tổng số bài viết, subscriber, model AI, môi trường).\n" +
-          "• <code>/ping</code> - Kiểm tra trạng thái hoạt động của bot và môi trường.";
+          "\n\n<b>CÁC LỆNH DÀNH CHO ADMIN:</b>\n" +
+          "- <code>/sync</code> - Quét nguồn tin tức mới và phát sóng (broadcast) ngay lập tức.\n" +
+          "- <code>/stats</code> - Xem thống kê hệ thống (tổng số bài viết, subscriber, model AI, môi trường).\n" +
+          "- <code>/ping</code> - Kiểm tra trạng thái hoạt động của bot và môi trường.";
       }
 
       await ctx.reply(welcomeMessage, { parse_mode: "HTML" });
