@@ -8,6 +8,7 @@ export interface News {
   summary?: string;
   category?: string;
   tags?: string[];
+  skills?: string[];
   importanceScore?: number;
   createdAt: Date;
   updatedAt: Date;
@@ -24,6 +25,7 @@ const newsSchema = new Schema<News>(
     summary: { type: String, trim: true },
     category: { type: String, trim: true },
     tags: { type: [String], default: [] },
+    skills: { type: [String], default: [] },
     importanceScore: { type: Number, default: 50 },
   },
   {

@@ -2,13 +2,13 @@ import { NewsModel, type News } from "./news.model";
 
 export type CreateNewsInput = Pick<
   News,
-  "title" | "url" | "source" | "publishedAt" | "summary" | "category" | "tags" | "importanceScore"
+  "title" | "url" | "source" | "publishedAt" | "summary" | "category" | "tags" | "skills" | "importanceScore"
 >;
 
 export type NewsView = Pick<
   News,
-  "title" | "url" | "source" | "publishedAt" | "summary" | "category" | "tags" | "importanceScore"
->;
+  "title" | "url" | "source" | "publishedAt" | "summary" | "category" | "tags" | "skills" | "importanceScore"
+> & { _id?: any };
 
 export class NewsService {
   async createManyIfNotExists(items: CreateNewsInput[]): Promise<number> {
@@ -74,5 +74,9 @@ export class NewsService {
     });
 
     return sorted.slice(0, limit);
+  }
+
+  async getById(id: string): Promise<NewsView | null> {
+    return NewsModel.findById(id).lean<NewsView>().exec();
   }
 }

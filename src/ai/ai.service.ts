@@ -73,11 +73,9 @@ export class AIService {
     source: string,
     url: string,
   ): Promise<AIProcessedResult> {
-    const fallback = await this.getFallback(title, content);
-
     if (!env.geminiApiKey) {
       console.warn("Cảnh báo: GEMINI_API_KEY chưa được cấu hình. Sử dụng dữ liệu mặc định (fallback).");
-      return fallback;
+      return this.getFallback(title, content);
     }
 
     try {
@@ -153,7 +151,7 @@ URL: ${url}`
       return this.validateAndNormalizeResult(result, title, content);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng Gemini (${env.geminiModel}):`, error);
-      return fallback;
+      return this.getFallback(title, content);
     }
   }
 
@@ -163,11 +161,9 @@ URL: ${url}`
     source: string,
     url: string,
   ): Promise<AIProcessedResult> {
-    const fallback = await this.getFallback(title, content);
-
     if (!env.openaiApiKey) {
       console.warn("Cảnh báo: OPENAI_API_KEY chưa được cấu hình. Sử dụng dữ liệu mặc định (fallback).");
-      return fallback;
+      return this.getFallback(title, content);
     }
 
     try {
@@ -227,7 +223,7 @@ JSON Schema format:
       return this.validateAndNormalizeResult(result, title, content);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng OpenAI (${env.openaiModel}):`, error);
-      return fallback;
+      return this.getFallback(title, content);
     }
   }
 
@@ -237,11 +233,9 @@ JSON Schema format:
     source: string,
     url: string,
   ): Promise<AIProcessedResult> {
-    const fallback = await this.getFallback(title, content);
-
     if (!env.groqApiKey) {
       console.warn("Cảnh báo: GROQ_API_KEY chưa được cấu hình. Sử dụng dữ liệu mặc định (fallback).");
-      return fallback;
+      return this.getFallback(title, content);
     }
 
     try {
@@ -301,7 +295,7 @@ JSON Schema format:
       return this.validateAndNormalizeResult(result, title, content);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng Groq (${env.groqModel}):`, error);
-      return fallback;
+      return this.getFallback(title, content);
     }
   }
 

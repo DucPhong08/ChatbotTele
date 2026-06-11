@@ -159,6 +159,7 @@ export class NewsCollector {
             summary: aiResult.summaryVi,
             category: aiResult.category,
             tags: aiResult.tags,
+            skills: feed.skills,
             importanceScore: aiResult.importanceScore,
           });
         }

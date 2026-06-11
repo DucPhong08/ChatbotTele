@@ -17,20 +17,20 @@ export function formatNewsList(items: NewsView[]): string {
       return [
         `<b>${index + 1}. ${escapeHtml(item.title)}</b>`,
         `Nguồn: ${item.source}`,
-        `👉 <a href="${item.url}">Đọc bài viết tại đây</a>`,
+        `<a href="${item.url}">Đọc bài viết tại đây</a>`,
       ].join("\n");
     })
     .join("\n\n");
 }
 
 export function formatArticlesBatch(articles: NewsView[]): string {
-  const header = "🔥 <b>TIN CÔNG NGHỆ MỚI NHẤT</b> 🔥\n\n";
+  const header = "<b>TIN CÔNG NGHỆ MỚI NHẤT</b>\n\n";
   const body = articles
     .map((article, index) => {
       return [
         `<b>${index + 1}. ${escapeHtml(article.title)}</b>`,
         article.summary ? `${escapeHtml(article.summary)}` : "",
-        `<i>Nguồn: ${article.source}</i> | 👉 <a href="${article.url}">Đọc bài viết tại đây</a>`,
+        `<i>Nguồn: ${article.source}</i> | <a href="${article.url}">Đọc bài viết tại đây</a>`,
       ]
         .filter(Boolean)
         .join("\n");
