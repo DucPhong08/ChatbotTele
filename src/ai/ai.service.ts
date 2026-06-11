@@ -64,41 +64,91 @@ const KEYWORD_RULES: KeywordRule[] = [
   {
     category: "backend",
     tag: "backend",
-    keywords: ["node.js", "nodejs", "api", "database", "postgres", "mongodb", "redis", "runtime", "queue"],
+    keywords: [
+      "node.js",
+      "nodejs",
+      "api",
+      "database",
+      "postgres",
+      "mongodb",
+      "redis",
+      "runtime",
+      "queue",
+    ],
     score: 9,
   },
   {
     category: "frontend",
     tag: "frontend",
-    keywords: ["react", "next.js", "nextjs", "javascript", "typescript", "css", "browser", "web app"],
+    keywords: [
+      "react",
+      "next.js",
+      "nextjs",
+      "javascript",
+      "typescript",
+      "css",
+      "browser",
+      "web app",
+    ],
     score: 8,
   },
   {
     category: "devops",
     tag: "devops",
-    keywords: ["cloud", "aws", "cloudflare", "deployment", "docker", "kubernetes", "ci/cd", "serverless"],
+    keywords: [
+      "cloud",
+      "aws",
+      "cloudflare",
+      "deployment",
+      "docker",
+      "kubernetes",
+      "ci/cd",
+      "serverless",
+    ],
     score: 8,
   },
   {
     category: "backend",
     tag: "performance",
-    keywords: ["performance", "benchmark", "latency", "throughput", "memory leak", "garbage collection"],
+    keywords: [
+      "performance",
+      "benchmark",
+      "latency",
+      "throughput",
+      "memory leak",
+      "garbage collection",
+    ],
     score: 8,
   },
   {
     category: "other",
     tag: "release",
-    keywords: ["release", "released", "stable", "beta", "rc", "changelog", "breaking change", "migration"],
+    keywords: [
+      "release",
+      "released",
+      "stable",
+      "beta",
+      "rc",
+      "changelog",
+      "breaking change",
+      "migration",
+    ],
     score: 7,
   },
   {
     category: "career",
     tag: "career",
-    keywords: ["career", "hiring", "interview", "salary", "developer productivity", "developer experience"],
+    keywords: [
+      "career",
+      "hiring",
+      "interview",
+      "salary",
+      "developer productivity",
+      "developer experience",
+    ],
     score: 5,
   },
 ];
-
 
 export class AIService {
   public static async translateWithGoogle(text: string): Promise<string> {
@@ -152,23 +202,54 @@ export class AIService {
         switch (provider) {
           case "openai":
             rawResult = await this.callChatCompletion(
-              "https://api.openai.com/v1/chat/completions", env.openaiApiKey, env.openaiModel, prompt, SUMMARIZE_PROMPT);
+              "https://api.openai.com/v1/chat/completions",
+              env.openaiApiKey,
+              env.openaiModel,
+              prompt,
+              SUMMARIZE_PROMPT,
+            );
             break;
           case "groq":
             rawResult = await this.callChatCompletion(
-              "https://api.groq.com/openai/v1/chat/completions", env.groqApiKey, env.groqModel, prompt, SUMMARIZE_PROMPT);
+              "https://api.groq.com/openai/v1/chat/completions",
+              env.groqApiKey,
+              env.groqModel,
+              prompt,
+              SUMMARIZE_PROMPT,
+            );
             break;
           case "openrouter":
             try {
               rawResult = await this.callChatCompletion(
-                "https://openrouter.ai/api/v1/chat/completions", env.openrouterApiKey, env.openrouterModel, prompt, SUMMARIZE_PROMPT,
-                { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" });
+                "https://openrouter.ai/api/v1/chat/completions",
+                env.openrouterApiKey,
+                env.openrouterModel,
+                prompt,
+                SUMMARIZE_PROMPT,
+                {
+                  "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+                  "X-Title": "Chatbot News Telegram",
+                },
+              );
             } catch (error) {
-              if (env.openrouterFallbackModel && env.openrouterFallbackModel !== env.openrouterModel) {
-                console.warn(`[Summarize OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`);
+              if (
+                env.openrouterFallbackModel &&
+                env.openrouterFallbackModel !== env.openrouterModel
+              ) {
+                console.warn(
+                  `[Summarize OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`,
+                );
                 rawResult = await this.callChatCompletion(
-                  "https://openrouter.ai/api/v1/chat/completions", env.openrouterApiKey, env.openrouterFallbackModel, prompt, SUMMARIZE_PROMPT,
-                  { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" });
+                  "https://openrouter.ai/api/v1/chat/completions",
+                  env.openrouterApiKey,
+                  env.openrouterFallbackModel,
+                  prompt,
+                  SUMMARIZE_PROMPT,
+                  {
+                    "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+                    "X-Title": "Chatbot News Telegram",
+                  },
+                );
               } else {
                 throw error;
               }
@@ -190,7 +271,8 @@ export class AIService {
         const actions = Array.isArray(raw.actions)
           ? raw.actions.map((a: unknown) => String(a).trim())
           : [];
-        const readabilityScore = typeof raw.readabilityScore === "number" ? raw.readabilityScore : 7;
+        const readabilityScore =
+          typeof raw.readabilityScore === "number" ? raw.readabilityScore : 7;
         const topics = Array.isArray(raw.topics)
           ? raw.topics.map((t: unknown) => String(t).trim().toLowerCase())
           : [];
@@ -217,7 +299,11 @@ export class AIService {
           }
 
           let finalUncertainty = uncertainty;
-          if (finalUncertainty && finalUncertainty !== "Không có" && !hasVietnamese(finalUncertainty)) {
+          if (
+            finalUncertainty &&
+            finalUncertainty !== "Không có" &&
+            !hasVietnamese(finalUncertainty)
+          ) {
             finalUncertainty = await this.translateWithGoogle(finalUncertainty);
           }
 
@@ -230,10 +316,10 @@ export class AIService {
 
           return {
             title: this.normalizeDevTerms(finalTitle),
-            summaryPoints: finalPoints.map(p => this.normalizeDevTerms(p)),
+            summaryPoints: finalPoints.map((p) => this.normalizeDevTerms(p)),
             whyItMatters: this.normalizeDevTerms(finalWhy),
             uncertainty: this.normalizeDevTerms(finalUncertainty),
-            actions: finalActions.map(a => this.normalizeDevTerms(a)),
+            actions: finalActions.map((a) => this.normalizeDevTerms(a)),
             readabilityScore,
             topics,
           };
@@ -275,6 +361,7 @@ export class AIService {
       titleVi: titleVi || title,
       summaryVi: this.formatFallbackSummary(translatedSummary, source, baseline),
       ...baseline,
+      skills: [],
     };
   }
 
@@ -342,7 +429,9 @@ export class AIService {
       }
     }
 
-    console.warn("[AI Failover] Tất cả các nhà cung cấp AI đều thất bại. Sử dụng rule-based fallback.");
+    console.warn(
+      "[AI Failover] Tất cả các nhà cung cấp AI đều thất bại. Sử dụng rule-based fallback.",
+    );
     return this.getFallback(title, content, source, publishedAt);
   }
 
@@ -352,7 +441,13 @@ export class AIService {
    * Nếu batch thất bại, sẽ fallback về xử lý từng bài riêng lẻ.
    */
   static async processArticleBatch(
-    articles: Array<{ title: string; content: string; source: string; url: string; publishedAt: Date }>,
+    articles: Array<{
+      title: string;
+      content: string;
+      source: string;
+      url: string;
+      publishedAt: Date;
+    }>,
   ): Promise<AIProcessedResult[]> {
     if (articles.length === 0) return [];
     if (articles.length === 1) {
@@ -371,7 +466,9 @@ export class AIService {
       }
     }
 
-    console.log(`[AI Batch] Xử lý ${articles.length} bài cùng lúc. Thứ tự: ${providersToTry.join(" -> ")}`);
+    console.log(
+      `[AI Batch] Xử lý ${articles.length} bài cùng lúc. Thứ tự: ${providersToTry.join(" -> ")}`,
+    );
 
     for (const provider of providersToTry) {
       try {
@@ -403,18 +500,29 @@ export class AIService {
                 env.openrouterModel,
                 batchPrompt,
                 TECH_NEWS_PROMPT,
-                { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" },
+                {
+                  "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+                  "X-Title": "Chatbot News Telegram",
+                },
               );
             } catch (error) {
-              if (env.openrouterFallbackModel && env.openrouterFallbackModel !== env.openrouterModel) {
-                console.warn(`[AI Batch OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`);
+              if (
+                env.openrouterFallbackModel &&
+                env.openrouterFallbackModel !== env.openrouterModel
+              ) {
+                console.warn(
+                  `[AI Batch OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`,
+                );
                 rawResult = await this.callChatCompletion(
                   "https://openrouter.ai/api/v1/chat/completions",
                   env.openrouterApiKey,
                   env.openrouterFallbackModel,
                   batchPrompt,
                   TECH_NEWS_PROMPT,
-                  { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" },
+                  {
+                    "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+                    "X-Title": "Chatbot News Telegram",
+                  },
                 );
               } else {
                 throw error;
@@ -607,7 +715,14 @@ ${JSON.stringify(articlesJson, null, 2)}`;
                   importanceScore: { type: "INTEGER" },
                   importanceReason: { type: "STRING" },
                 },
-                required: ["titleVi", "summaryVi", "category", "tags", "importanceScore", "importanceReason"],
+                required: [
+                  "titleVi",
+                  "summaryVi",
+                  "category",
+                  "tags",
+                  "importanceScore",
+                  "importanceReason",
+                ],
               },
               temperature: 0.3,
             },
@@ -806,11 +921,16 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       return await callWithModel(env.openrouterModel);
     } catch (error) {
       if (env.openrouterFallbackModel && env.openrouterFallbackModel !== env.openrouterModel) {
-        console.warn(`[OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`);
+        console.warn(
+          `[OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`,
+        );
         try {
           return await callWithModel(env.openrouterFallbackModel);
         } catch (fallbackError) {
-          console.error(`[OpenRouter] Thất bại với cả fallback model ${env.openrouterFallbackModel}:`, fallbackError);
+          console.error(
+            `[OpenRouter] Thất bại với cả fallback model ${env.openrouterFallbackModel}:`,
+            fallbackError,
+          );
           throw fallbackError;
         }
       }
@@ -838,9 +958,10 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     const raw = this.isRecord(result) ? result : {};
     const category = this.isCategory(raw.category) ? raw.category : baseline.category;
     const aiScore = this.readScore(raw.importanceScore);
-    const importanceScore = aiScore === null
-      ? baseline.importanceScore
-      : this.clampScore(aiScore, baseline.importanceScore - 25, baseline.importanceScore + 25);
+    const importanceScore =
+      aiScore === null
+        ? baseline.importanceScore
+        : this.clampScore(aiScore, baseline.importanceScore - 25, baseline.importanceScore + 25);
 
     // AI trả trường summary (có thể là array các gạch đầu dòng hoặc string đơn lẻ)
     let summaryStr = "";
@@ -854,24 +975,29 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       summaryStr = raw.summary.trim();
     }
 
-    if (!summaryStr || summaryStr.toLowerCase().includes("article url:") || summaryStr.startsWith("http")) {
-      summaryStr = this.truncate(this.cleanContent(content), 300) || "No detailed description available.";
+    if (
+      !summaryStr ||
+      summaryStr.toLowerCase().includes("article url:") ||
+      summaryStr.startsWith("http")
+    ) {
+      summaryStr =
+        this.truncate(this.cleanContent(content), 300) || "No detailed description available.";
     } else {
       summaryStr = this.truncate(summaryStr, 600);
     }
 
-    let titleEn = typeof raw.title === "string" && raw.title.trim()
-      ? raw.title.trim()
-      : title;
+    let titleEn = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : title;
     titleEn = this.truncate(titleEn, 120);
 
-    const tags = Array.from(new Set([
-      ...this.normalizeTags(raw.tags),
-      ...baseline.tags,
-    ])).slice(0, 10);
-    let importanceReason = typeof raw.importanceReason === "string" && raw.importanceReason.trim()
-      ? raw.importanceReason.trim()
-      : baseline.importanceReason;
+    const tags = Array.from(new Set([...this.normalizeTags(raw.tags), ...baseline.tags])).slice(
+      0,
+      10,
+    );
+    const skills = this.normalizeTags(raw.skills);
+    let importanceReason =
+      typeof raw.importanceReason === "string" && raw.importanceReason.trim()
+        ? raw.importanceReason.trim()
+        : baseline.importanceReason;
     importanceReason = this.truncate(importanceReason, 150);
 
     return {
@@ -879,6 +1005,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       summaryVi: summaryStr,
       category,
       tags,
+      skills,
       importanceScore,
       importanceReason,
     };
@@ -906,7 +1033,14 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     const category = this.pickCategory(source, categoryScores);
     const sourceScore = SOURCE_SCORES[source] ?? 8;
     const freshnessScore = this.getFreshnessScore(publishedAt);
-    const categoryBoost = category === "security" ? 10 : category === "ai" ? 8 : ["backend", "devops"].includes(category) ? 5 : 0;
+    const categoryBoost =
+      category === "security"
+        ? 10
+        : category === "ai"
+          ? 8
+          : ["backend", "devops"].includes(category)
+            ? 5
+            : 0;
     const importanceScore = this.clampScore(
       25 + sourceScore + Math.min(keywordScore, 35) + freshnessScore + categoryBoost,
     );
@@ -919,7 +1053,12 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       category,
       tags: Array.from(tags).slice(0, 8),
       importanceScore,
-      importanceReason: this.buildImportanceReason(source, category, Array.from(tags), freshnessScore),
+      importanceReason: this.buildImportanceReason(
+        source,
+        category,
+        Array.from(tags),
+        freshnessScore,
+      ),
     };
   }
 
@@ -1018,7 +1157,10 @@ ${JSON.stringify(articlesJson, null, 2)}`;
   }
 
   private static cleanContent(content: string): string {
-    return content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return content
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   private static truncate(text: string, maxLength: number): string {
@@ -1086,8 +1228,10 @@ ${JSON.stringify(articlesJson, null, 2)}`;
   }
 
   private static isGoogleTranslateResponse(value: unknown): value is GoogleTranslateResponse {
-    return Array.isArray(value)
-      && Array.isArray(value[0])
-      && value[0].every((item) => Array.isArray(item) && typeof item[0] === "string");
+    return (
+      Array.isArray(value) &&
+      Array.isArray(value[0]) &&
+      value[0].every((item) => Array.isArray(item) && typeof item[0] === "string")
+    );
   }
 }

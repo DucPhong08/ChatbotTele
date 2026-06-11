@@ -1,7 +1,6 @@
 import { type FeedConfig } from "../../types/feed";
 
 export const feeds: FeedConfig[] = [
-  // Tổng hợp tin dev
   {
     source: "Hacker News",
     url: "https://hnrss.org/frontpage",
@@ -21,35 +20,22 @@ export const feeds: FeedConfig[] = [
     skills: ["github", "open-source", "developer-tools", "ai"],
   },
 
-  // JavaScript / TypeScript / Node.js
+  // Bỏ React Blog vì RSS hiện tại lỗi 404
   // {
-  //   source: "Node.js Blog",
-  //   url: "https://nodejs.org/en/feed/blog.xml",
-  //   category: "backend",
-  //   skills: ["nodejs", "javascript", "backend", "runtime"],
-  // },
-  // {
-  //   source: "JavaScript Weekly",
-  //   url: "https://javascriptweekly.com/rss",
-  //   category: "backend",
-  //   skills: ["javascript", "typescript", "web"],
+  //   source: "React Blog",
+  //   url: "https://react.dev/blog/rss.xml",
+  //   category: "frontend",
+  //   skills: ["react", "frontend", "javascript"],
   // },
 
-  // Frontend
-  {
-    source: "React Blog",
-    url: "https://react.dev/blog/rss.xml",
-    category: "frontend",
-    skills: ["react", "frontend", "javascript"],
-  },
-  {
-    source: "Vercel Blog",
-    url: "https://vercel.com/blog/rss",
-    category: "frontend",
-    skills: ["nextjs", "frontend", "deployment", "web"],
-  },
+  // Bỏ URL cũ này vì lỗi 404
+  // {
+  //   source: "Vercel Blog",
+  //   url: "https://vercel.com/blog/rss",
+  //   category: "frontend",
+  //   skills: ["nextjs", "frontend", "deployment", "web"],
+  // },
 
-  // Cloud / DevOps
   {
     source: "Cloudflare Changelog",
     url: "https://developers.cloudflare.com/changelog/rss.xml",
@@ -62,10 +48,8 @@ export const feeds: FeedConfig[] = [
     category: "devops",
     skills: ["aws", "cloud", "infrastructure"],
   },
-
-  // AI / LLM
   {
-    source: "OpenAI Blog",
+    source: "OpenAI News",
     url: "https://openai.com/news/rss.xml",
     category: "ai",
     skills: ["ai", "llm", "agents", "api"],
@@ -75,5 +59,19 @@ export const feeds: FeedConfig[] = [
     url: "https://huggingface.co/blog/feed.xml",
     category: "ai",
     skills: ["ai", "machine-learning", "open-source-models"],
+  },
+
+  // Có thể bật lại
+  {
+    source: "Node.js Blog",
+    url: "https://nodejs.org/en/feed/blog.xml",
+    category: "backend",
+    skills: ["nodejs", "javascript", "backend", "runtime"],
+  },
+  {
+    source: "JavaScript Weekly",
+    url: "https://javascriptweekly.com/rss",
+    category: "frontend",
+    skills: ["javascript", "typescript", "web"],
   },
 ];

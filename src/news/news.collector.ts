@@ -103,7 +103,7 @@ export class NewsCollector {
               summary: aiResult.summaryVi,
               category: aiResult.category,
               tags: aiResult.tags,
-              skills: feed.skills,
+              skills: aiResult.skills.length > 0 ? aiResult.skills : feed.skills,
               importanceScore: aiResult.importanceScore,
               importanceReason: aiResult.importanceReason,
             });

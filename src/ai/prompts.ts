@@ -11,9 +11,10 @@ Rules:
 6. "summary": array of 3-5 concise bullet points about the key technical points. Never include URLs or metadata.
 7. "category": must be exactly one of: "ai", "backend", "frontend", "devops", "security", "mobile", "career", "other".
 8. "tags": array of 2-6 lowercase technical tags, e.g. ["nodejs", "mongodb"]. Use "other" only if no specific tag fits.
-9. "importanceScore": integer from 1 to 100, based on technical value, ecosystem impact, production relevance, and security risk.
-10. "importanceReason": one concise Vietnamese sentence explaining the score.
-11. Output valid JSON only. Do not include markdown, comments, code fences, or trailing commas.
+9. "skills": array of 2-5 lowercase practical developer skills or technologies relevant to this article, e.g. ["javascript", "backend", "docker", "kubernetes", "git"].
+10. "importanceScore": integer from 1 to 100, based on technical value, ecosystem impact, production relevance, and security risk.
+11. "importanceReason": one concise Vietnamese sentence explaining the score.
+12. Output valid JSON only. Do not include markdown, comments, code fences, or trailing commas.
 
 JSON format:
 {
@@ -21,6 +22,7 @@ JSON format:
   "summary": ["string"],
   "category": "ai",
   "tags": ["string"],
+  "skills": ["string"],
   "importanceScore": 50,
   "importanceReason": "string"
 }`;

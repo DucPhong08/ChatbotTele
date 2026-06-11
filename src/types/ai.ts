@@ -13,6 +13,7 @@ export interface AIProcessedResult {
   summaryVi: string;
   category: ArticleCategory;
   tags: string[];
+  skills: string[];
   importanceScore: number;
   importanceReason: string;
 }
