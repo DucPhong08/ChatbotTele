@@ -166,39 +166,37 @@ export function registerStartCommand(bot: Bot<Context>, newsService: NewsService
       const welcomeMessage = isEn
         ? `<b>WELCOME TO TECHDEVNEWS BOT</b>\n` +
           `────────────────\n` +
-          `You have successfully subscribed to automated updates! The bot will automatically send you the latest tech articles.\n\n` +
-          `<b>COMMANDS AVAILABLE FOR YOU:</b>\n` +
-          `- /news - View 5 latest articles.\n` +
-          `- /news <code>[page]</code> - View older news (e.g. /news <code>2</code>).\n` +
-          `- /category <code>[custom_text]</code> - Choose preferred categories using natural language.\n` +
-          `- /language - Switch language preferences (EN / VI).\n` +
-          `- /submitfeed <code>[rss_url]</code> - Propose a new RSS source for the bot to monitor.\n` +
-          `- /stop - Unsubscribe from automated news.\n` +
-          `- /start - Resubscribe and display this guide.` +
+          `You have subscribed to automated updates! The bot will send you the latest tech articles.\n\n` +
+          `<b>COMMANDS:</b>\n` +
+          `- /news - View latest news (e.g., /news 2).\n` +
+          `- /category <code>[topic]</code> - Filter categories using AI.\n` +
+          `- /settings - Configure language & digest preferences.\n` +
+          `- /submitfeed <code>[url]</code> - Suggest a new RSS source.\n` +
+          `- /stop - Stop receiving automated news.\n` +
+          `- /start - Show help guide.` +
           (env.adminChatIds.includes(chatId)
-            ? `\n\n<b>ADMIN COMMANDS:</b>\n` +
-              `- /addfeed <code>[rss_url]</code> - Add and monitor an RSS source immediately.\n` +
-              `- /sync - Crawl and broadcast immediately.\n` +
-              `- /stats - View system status and configuration.\n` +
-              `- /ping - Check bot health and status.`
+            ? `\n\n<b>ADMIN:</b>\n` +
+              `- /addfeed <code>[url]</code> - Monitor RSS source instantly.\n` +
+              `- /sync - Force crawl & broadcast now.\n` +
+              `- /stats - View system statistics.\n` +
+              `- /ping - Check health status.`
             : "")
         : `<b>CHÀO MỪNG BẠN ĐẾN VỚI TECHDEVNEWS BOT</b>\n` +
           `────────────────\n` +
-          `Bạn đã đăng ký nhận tin tự động thành công! Bot sẽ tự động gửi các bài viết công nghệ mới nhất cho bạn.\n\n` +
-          `<b>CÁC LỆNH DÀNH CHO BẠN:</b>\n` +
-          `- /news - Xem 5 bài viết mới nhất.\n` +
-          `- /news <code>[trang]</code> - Xem tin ở các trang tiếp theo (ví dụ: /news <code>2</code>).\n` +
-          `- /category <code>[nội dung]</code> hoặc /theloai <code>[nội dung]</code> - Chọn thể loại muốn xuất hiện nhất (hỗ trợ nhập văn bản tự do bằng AI).\n` +
-          `- /language - Chọn ngôn ngữ hiển thị (English / Tiếng Việt).\n` +
-          `- /submitfeed <code>[url_rss]</code> - Đề xuất thêm nguồn tin mới cho Bot theo dõi.\n` +
-          `- /stop - Hủy nhận tin tức tự động.\n` +
-          `- /start - Đăng ký lại và hiển thị hướng dẫn này.` +
+          `Bạn đã đăng ký nhận tin tự động! Bot sẽ gửi các bài viết công nghệ mới nhất cho bạn.\n\n` +
+          `<b>CÁC LỆNH HỖ TRỢ:</b>\n` +
+          `- /news - Xem tin mới nhất (VD: /news 2).\n` +
+          `- /category <code>[chủ đề]</code> - Lọc thể loại tin bằng AI.\n` +
+          `- /settings - Cấu hình ngôn ngữ & bản tin tổng hợp.\n` +
+          `- /submitfeed <code>[url]</code> - Đề xuất thêm nguồn RSS mới.\n` +
+          `- /stop - Hủy nhận tin tự động.\n` +
+          `- /start - Đăng ký lại và xem hướng dẫn.` +
           (env.adminChatIds.includes(chatId)
-            ? `\n\n<b>CÁC LỆNH DÀNH CHO ADMIN:</b>\n` +
-              `- /addfeed <code>[url_rss]</code> - Thêm và giám sát trực tiếp một nguồn tin RSS mới.\n` +
-              `- /sync - Quét nguồn tin tức mới và phát sóng (broadcast) ngay lập tức.\n` +
-              `- /stats - Xem thống kê hệ thống (tổng số bài viết, subscriber, model AI, môi trường).\n` +
-              `- /ping - Kiểm tra trạng thái hoạt động của bot và môi trường.`
+            ? `\n\n<b>LỆNH ADMIN:</b>\n` +
+              `- /addfeed <code>[url]</code> - Thêm nguồn RSS ngay lập tức.\n` +
+              `- /sync - Cào tin & gửi tin tức thì.\n` +
+              `- /stats - Xem thống kê hệ thống.\n` +
+              `- /ping - Kiểm tra hoạt động của bot.`
             : "");
 
       await ctx.reply(welcomeMessage, { parse_mode: "HTML" });

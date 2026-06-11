@@ -21,7 +21,7 @@ export function startCollectNewsJob(
 
       if (newArticles.length > 0) {
         const notifyArticles = newArticles.filter((article) => {
-          const score = typeof article.importanceScore === "number" ? article.importanceScore : 50;
+          const score = Number.isInteger(article.importanceScore) ? article.importanceScore! : 50;
           return score >= env.notificationMinScore;
         });
 
@@ -34,97 +34,31 @@ export function startCollectNewsJob(
 
         // Sắp xếp các bài viết mới thu thập được theo tầm quan trọng giảm dần và lấy tối đa 5 bài
         const sortedNew = [...notifyArticles].sort((a, b) => {
-          const scoreA = typeof a.importanceScore === "number" ? a.importanceScore : 50;
-          const scoreB = typeof b.importanceScore === "number" ? b.importanceScore : 50;
+          const scoreA = Number.isInteger(a.importanceScore) ? a.importanceScore! : 50;
+          const scoreB = Number.isInteger(b.importanceScore) ? b.importanceScore! : 50;
           return scoreB - scoreA;
         });
         const topNew = sortedNew.slice(0, 5);
 
-        // Lấy tất cả người dùng đã đăng ký nhận tin
-        const subscribers = await SubscriberModel.find({ isActiveAI: { $ne: false } })
-          .lean()
-          .exec();
-
-        if (subscribers.length > 0) {
-          console.log(`Đang gửi tự động tin tức mới tới ${subscribers.length} người dùng...`);
-
-          let botUsername = bot.botInfo?.username;
-          if (!botUsername) {
-            try {
-              const me = await bot.api.getMe();
-              botUsername = me.username;
-            } catch (err) {
-              console.warn("Không thể lấy username bot:", err);
-              botUsername = "";
-            }
-          }
-
-          for (const sub of subscribers) {
-            try {
-              const preferred =
-                sub.preferredCategories && sub.preferredCategories.length > 0
-                  ? sub.preferredCategories
-                  : ["all"];
-              let userArticles = topNew;
-
-              if (!preferred.includes("all")) {
-                const filtered = notifyArticles.filter(
-                  (a) =>
-                    a.category &&
-                    preferred.map((p) => p.toLowerCase()).includes(a.category.toLowerCase()),
-                );
-                if (filtered.length === 0) {
-                  // Không có bài mới nào thuộc thể loại ưa thích của user này
-                  continue;
-                }
-                userArticles = [...filtered]
-                  .sort((a, b) => {
-                    const scoreA = typeof a.importanceScore === "number" ? a.importanceScore : 50;
-                    const scoreB = typeof b.importanceScore === "number" ? b.importanceScore : 50;
-                    return scoreB - scoreA;
-                  })
-                  .slice(0, 5);
-              }
-
-              // Lọc bổ sung bằng AI nếu người dùng có custom prompt và không chọn "Tất cả"
-              if (sub.customPrompt && !preferred.includes("all")) {
-                userArticles = await AIService.filterArticlesByPrompt(
-                  userArticles,
-                  sub.customPrompt,
-                );
-                if (userArticles.length === 0) {
-                  continue;
-                }
-              }
-
-              const lang = sub.language || "vi";
-              const message = formatArticlesBatch(userArticles, botUsername, preferred, lang);
-              const keyboard = new InlineKeyboard();
-              if (userArticles.length === 5) {
-                const nextLabel = lang === "en" ? "▶️ Next" : "▶️ Sau";
-                keyboard.text(nextLabel, "news_page_2");
-              }
-
-              await bot.api.sendMessage(sub.chatId, message, {
-                parse_mode: "HTML",
-                reply_markup: keyboard,
-              });
-            } catch (err: any) {
-              console.error(`Không thể gửi tin nhắn tự động đến chatId ${sub.chatId}:`, err);
-              // Tự động dọn dẹp subscriber nếu họ đã chặn bot hoặc chat không còn tồn tại
-              const isBlocked =
-                err?.description?.includes("blocked") ||
-                err?.description?.includes("chat not found") ||
-                err?.code === 403;
-              if (isBlocked) {
-                console.log(
-                  `[Auto-cleanup] Đang đánh dấu subscriber đã chặn bot làm không hoạt động: ${sub.chatId}`,
-                );
-                await SubscriberModel.updateOne({ chatId: sub.chatId }, { isActiveAI: false });
-              }
-            }
+        // Lấy thông tin username của bot nếu chưa có
+        let botUsername = bot.botInfo?.username;
+        if (!botUsername) {
+          try {
+            const me = await bot.api.getMe();
+            botUsername = me.username;
+          } catch (err) {
+            console.warn("Không thể lấy username bot:", err);
+            botUsername = "";
           }
         }
+
+        // Gọi helper broadcastToSubscribers để gửi tin an toàn (chống Rate Limit) cho người nhận Real-time
+        await import("../bot/telegram.broadcaster").then(async ({ broadcastToSubscribers }) => {
+          await broadcastToSubscribers(bot, notifyArticles, topNew, botUsername || "", {
+            isActiveAI: { $ne: false },
+            digestMode: { $ne: true },
+          });
+        });
       }
     } catch (error) {
       console.error("Tiến trình thu thập tin tức thất bại", error);

@@ -7,6 +7,8 @@ export interface Subscriber {
   preferredCategories?: string[];
   customPrompt?: string;
   language?: "vi" | "en";
+  digestMode?: boolean;
+  digestTime?: string;
   createdAt: Date;
   updatedAt: Date;
 }

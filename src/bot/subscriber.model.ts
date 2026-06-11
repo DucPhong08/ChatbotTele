@@ -13,6 +13,8 @@ const subscriberSchema = new Schema<Subscriber>(
     preferredCategories: { type: [String], default: ["all"] },
     customPrompt: { type: String, default: "" },
     language: { type: String, enum: ["vi", "en"], default: "vi" },
+    digestMode: { type: Boolean, default: false },
+    digestTime: { type: String, default: "08:00" },
   },
   {
     timestamps: true,

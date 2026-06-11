@@ -2,6 +2,7 @@ import { createBot } from "./bot/bot";
 import { env } from "./config/env";
 import { connectMongo, disconnectMongo } from "./db/mongo";
 import { startCollectNewsJob } from "./jobs/collect-news.job";
+import { startDigestJob } from "./jobs/digest.job";
 import { NewsCollector } from "./news/news.collector";
 import { NewsService } from "./news/news.service";
 import { createFastifyServer } from "./server/fastify.server";
@@ -14,12 +15,14 @@ async function bootstrap(): Promise<void> {
   const bot = createBot(newsService, newsCollector);
 
   const collectNewsJob = startCollectNewsJob(newsCollector, env.newsCron, bot);
+  const digestJob = startDigestJob(bot);
   const server = createFastifyServer(bot, env.telegramMode);
 
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`Nhận tín hiệu ${signal}. Đang dừng ứng dụng...`);
 
     collectNewsJob.stop();
+    digestJob.stop();
     await bot.stop();
     await server.close();
     await disconnectMongo();
@@ -45,7 +48,10 @@ async function bootstrap(): Promise<void> {
       await bot.api.setWebhook(webhookEndpoint);
       console.log(`Đã kích hoạt Telegram webhook tại: ${webhookEndpoint}`);
     } catch (error) {
-      console.error(`Cảnh báo: Không thể cấu hình Telegram webhook (${webhookEndpoint}). Có thể do lỗi kết nối mạng:`, error);
+      console.error(
+        `Cảnh báo: Không thể cấu hình Telegram webhook (${webhookEndpoint}). Có thể do lỗi kết nối mạng:`,
+        error,
+      );
     }
     return;
   }
@@ -65,7 +71,10 @@ async function bootstrap(): Promise<void> {
       },
     })
     .catch((error) => {
-      console.error("Telegram long polling thất bại (vui lòng kiểm tra kết nối mạng đến api.telegram.org)", error);
+      console.error(
+        "Telegram long polling thất bại (vui lòng kiểm tra kết nối mạng đến api.telegram.org)",
+        error,
+      );
       void shutdown("polling-error");
     });
 }

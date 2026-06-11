@@ -29,7 +29,7 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
       }
 
       const notifyArticles = newArticles.filter((article) => {
-        const score = typeof article.importanceScore === "number" ? article.importanceScore : 50;
+        const score = Number.isInteger(article.importanceScore) ? article.importanceScore! : 50;
         return score >= env.notificationMinScore;
       });
 
@@ -42,8 +42,8 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
 
       // Sắp xếp các bài viết mới thu thập được theo tầm quan trọng giảm dần và lấy tối đa 5 bài
       const sortedNew = [...notifyArticles].sort((a, b) => {
-        const scoreA = typeof a.importanceScore === "number" ? a.importanceScore : 50;
-        const scoreB = typeof b.importanceScore === "number" ? b.importanceScore : 50;
+        const scoreA = Number.isInteger(a.importanceScore) ? a.importanceScore! : 50;
+        const scoreB = Number.isInteger(b.importanceScore) ? b.importanceScore! : 50;
         return scoreB - scoreA;
       });
       const topNew = sortedNew.slice(0, 5);
@@ -52,74 +52,13 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
         `Đã thu thập thêm ${newArticles.length} bài viết mới. Tiến hành gửi tin theo sở thích của từng người dùng...`,
       );
 
-      // Lấy danh sách người đăng ký nhận tin
-      const subscribers = await SubscriberModel.find({ isActiveAI: { $ne: false } })
-        .lean()
-        .exec();
-      if (subscribers.length > 0) {
-        for (const sub of subscribers) {
-          try {
-            const preferred =
-              sub.preferredCategories && sub.preferredCategories.length > 0
-                ? sub.preferredCategories
-                : ["all"];
-            let userArticles = topNew;
+      // Phát tin tới các subscriber sử dụng broadcaster để tránh bị rate limit
+      const { broadcastToSubscribers } = await import("../telegram.broadcaster");
+      const result = await broadcastToSubscribers(bot, notifyArticles, topNew, ctx.me.username);
 
-            if (!preferred.includes("all")) {
-              const filtered = notifyArticles.filter(
-                (a) =>
-                  a.category &&
-                  preferred.map((p) => p.toLowerCase()).includes(a.category.toLowerCase()),
-              );
-              if (filtered.length === 0) {
-                // Không có bài mới nào thuộc thể loại ưa thích của user này
-                continue;
-              }
-              userArticles = [...filtered]
-                .sort((a, b) => {
-                  const scoreA = typeof a.importanceScore === "number" ? a.importanceScore : 50;
-                  const scoreB = typeof b.importanceScore === "number" ? b.importanceScore : 50;
-                  return scoreB - scoreA;
-                })
-                .slice(0, 5);
-            }
-
-            // Lọc bổ sung bằng AI nếu người dùng có custom prompt và không chọn "Tất cả"
-            if (sub.customPrompt && !preferred.includes("all")) {
-              userArticles = await AIService.filterArticlesByPrompt(userArticles, sub.customPrompt);
-              if (userArticles.length === 0) {
-                continue;
-              }
-            }
-
-            const lang = sub.language || "vi";
-            const message = formatArticlesBatch(userArticles, ctx.me.username, preferred, lang);
-            const keyboard = new InlineKeyboard();
-            if (userArticles.length === 5) {
-              const nextLabel = lang === "en" ? "▶️ Next" : "▶️ Sau";
-              keyboard.text(nextLabel, "news_page_2");
-            }
-
-            await bot.api.sendMessage(sub.chatId, message, {
-              parse_mode: "HTML",
-              reply_markup: keyboard,
-            });
-          } catch (err: any) {
-            console.error(`Không thể gửi tin nhắn đến chatId ${sub.chatId}:`, err);
-            // Tự động dọn dẹp subscriber nếu họ đã chặn bot hoặc chat không còn tồn tại
-            const isBlocked =
-              err?.description?.includes("blocked") ||
-              err?.description?.includes("chat not found") ||
-              err?.code === 403;
-            if (isBlocked) {
-              console.log(
-                `[Auto-cleanup] Đang đánh dấu subscriber đã chặn bot làm không hoạt động: ${sub.chatId}`,
-              );
-              await SubscriberModel.updateOne({ chatId: sub.chatId }, { isActiveAI: false });
-            }
-          }
-        }
-      }
+      await ctx.reply(
+        `Đã hoàn tất gửi tin tức mới:\n- Gửi thành công: ${result.sent} người dùng\n- Bỏ qua (không trùng sở thích): ${result.skipped}\n- Lỗi/Bị chặn: ${result.failed + result.deactivated}`,
+      );
     } catch (error) {
       console.error("Lỗi khi chạy lệnh /sync:", error);
       await ctx.reply("Tiến trình thu thập tin tức thất bại. Vui lòng kiểm tra lại cấu hình AI.");

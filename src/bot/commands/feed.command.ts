@@ -103,7 +103,7 @@ export function registerFeedCommands(bot: Bot<Context>): void {
     const inputUrl = String(ctx.match || "").trim();
     if (!inputUrl) {
       await ctx.reply(
-        "Vui lòng nhập đường dẫn trang web hoặc nguồn RSS. Ví dụ:\n<code>/addfeed https://www.facebook.com/AIoT.CNTT.PTIT</code>",
+        "Vui lòng nhập đường dẫn trang web hoặc nguồn RSS. Ví dụ:\n<code>/addfeed https://www.facebook.com/fptsoftware</code>",
         { parse_mode: "HTML" },
       );
       return;
@@ -165,7 +165,7 @@ export function registerFeedCommands(bot: Bot<Context>): void {
     const inputUrl = String(ctx.match || "").trim();
     if (!inputUrl) {
       await ctx.reply(
-        "Vui lòng cung cấp đường dẫn trang web hoặc nguồn RSS muốn đề xuất. Ví dụ:\n<code>/submitfeed https://www.facebook.com/AIoT.CNTT.PTIT</code>",
+        "Vui lòng cung cấp đường dẫn trang web hoặc nguồn RSS muốn đề xuất. Ví dụ:\n<code>/submitfeed https://www.facebook.com/fptsoftware</code>",
         { parse_mode: "HTML" },
       );
       return;
