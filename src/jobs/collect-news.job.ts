@@ -1,5 +1,5 @@
 import cron, { type ScheduledTask } from "node-cron";
-import { type Bot, type Context } from "grammy";
+import { type Bot, type Context, InlineKeyboard } from "grammy";
 import { NewsCollector } from "../news/news.collector";
 import { SubscriberModel } from "../bot/subscriber.model";
 import { formatArticlesBatch } from "../news/news.formatter";
@@ -31,13 +31,13 @@ export function startCollectNewsJob(
           return;
         }
 
-        // Sắp xếp các bài viết mới thu thập được theo tầm quan trọng giảm dần và lấy tối đa 10 bài
+        // Sắp xếp các bài viết mới thu thập được theo tầm quan trọng giảm dần và lấy tối đa 5 bài
         const sortedNew = [...notifyArticles].sort((a, b) => {
           const scoreA = typeof a.importanceScore === "number" ? a.importanceScore : 50;
           const scoreB = typeof b.importanceScore === "number" ? b.importanceScore : 50;
           return scoreB - scoreA;
         });
-        const topNew = sortedNew.slice(0, 10);
+        const topNew = sortedNew.slice(0, 5);
 
         // Lấy tất cả người dùng đã đăng ký nhận tin
         const subscribers = await SubscriberModel.find().lean().exec();
@@ -46,12 +46,6 @@ export function startCollectNewsJob(
           console.log(
             `Đang gửi tự động ${topNew.length} bài viết mới tới ${subscribers.length} người dùng...`,
           );
-
-          // Nhóm các bài viết thành các nhóm tối đa 5 bài
-          const batches: typeof topNew[] = [];
-          for (let i = 0; i < topNew.length; i += 5) {
-            batches.push(topNew.slice(i, i + 5));
-          }
 
           let botUsername = bot.botInfo?.username;
           if (!botUsername) {
@@ -64,20 +58,20 @@ export function startCollectNewsJob(
             }
           }
 
-          for (const batch of batches) {
-            const message = formatArticlesBatch(batch, botUsername);
+          const message = formatArticlesBatch(topNew, botUsername);
+          const keyboard = new InlineKeyboard();
+          if (topNew.length === 5) {
+            keyboard.text("Trang sau", "news_page_2");
+          }
 
-            for (const sub of subscribers) {
-              try {
-                await bot.api.sendMessage(sub.chatId, message, {
-                  parse_mode: "HTML",
-                });
-              } catch (err) {
-                console.error(
-                  `Không thể gửi tin nhắn tự động đến chatId ${sub.chatId}:`,
-                  err,
-                );
-              }
+          for (const sub of subscribers) {
+            try {
+              await bot.api.sendMessage(sub.chatId, message, {
+                parse_mode: "HTML",
+                reply_markup: keyboard,
+              });
+            } catch (err) {
+              console.error(`Không thể gửi tin nhắn tự động đến chatId ${sub.chatId}:`, err);
             }
           }
         }
@@ -95,7 +89,9 @@ export function startCollectNewsJob(
         console.log("Database trống, đang chạy thu thập tin lần đầu...");
         void collect();
       } else {
-        console.log("Đã có tin tức trong DB. Bỏ qua thu thập lúc khởi động để tránh bị khóa IP (Rate Limit).");
+        console.log(
+          "Đã có tin tức trong DB. Bỏ qua thu thập lúc khởi động để tránh bị khóa IP (Rate Limit).",
+        );
       }
     } catch (err) {
       console.error("Lỗi khi kiểm tra số lượng bài viết lúc khởi động:", err);

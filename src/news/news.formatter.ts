@@ -1,10 +1,7 @@
 import { type NewsView } from "../types/news";
 
 export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export const hasVietnamese = (text: string): boolean =>
@@ -15,7 +12,7 @@ export function formatNewsList(items: NewsView[], botUsername: string, startInde
     return "Chưa có tin tức nào được lưu. Vui lòng đợi tiến trình thu thập tin chạy.";
   }
 
-  const page = Math.floor((startIndex - 1) / 10) + 1;
+  const page = Math.floor((startIndex - 1) / 5) + 1;
   const header = `<b>DANH SÁCH TIN TỨC MỚI NHẤT (Trang ${page})</b>\n\n`;
 
   const body = items
@@ -51,13 +48,19 @@ export function formatNewsDetail(item: NewsView): string {
     `<b>Nguồn:</b> ${item.source} | <b>Đánh giá:</b> ${item.importanceScore || 50}/100`,
     item.importanceReason ? `<b>Lý do đánh giá:</b> ${escapeHtml(item.importanceReason)}` : "",
     item.category ? `<b>Danh mục:</b> #_${item.category.toUpperCase()}` : "",
-    item.tags && item.tags.length > 0 ? `<b>Thẻ (Tags):</b> ${item.tags.map(t => `#${t}`).join(", ")}` : "",
-    item.skills && item.skills.length > 0 ? `<b>Kỹ năng (Skills):</b> ${item.skills.map(s => `<code>${s}</code>`).join(", ")}` : "",
+    item.tags && item.tags.length > 0
+      ? `<b>Thẻ (Tags):</b> ${item.tags.map((t) => `#${t}`).join(", ")}`
+      : "",
+    item.skills && item.skills.length > 0
+      ? `<b>Kỹ năng (Skills):</b> ${item.skills.map((s) => `<code>${s}</code>`).join(", ")}`
+      : "",
     `━━━━━━━━━━━━━━━━━━━━`,
     `<b>Mô tả ngắn gọn:</b>\n${displaySummary}`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `<a href="${item.url}">Đọc bài viết gốc tại nguồn</a>`
-  ].filter(Boolean).join("\n");
+    `<a href="${item.url}">Đọc bài viết gốc tại nguồn</a>`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function formatArticlesBatch(articles: NewsView[], botUsername: string): string {

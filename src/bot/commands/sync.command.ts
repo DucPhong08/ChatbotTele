@@ -1,13 +1,10 @@
-import { type Bot, type Context } from "grammy";
+import { type Bot, type Context, InlineKeyboard } from "grammy";
 import { NewsCollector } from "../../news/news.collector";
 import { SubscriberModel } from "../subscriber.model";
 import { formatArticlesBatch } from "../../news/news.formatter";
 import { env } from "../../config/env";
 
-export function registerSyncCommand(
-  bot: Bot<Context>,
-  collector: NewsCollector,
-): void {
+export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector): void {
   bot.command("sync", async (ctx) => {
     const chatId = ctx.chat.id;
 
@@ -31,8 +28,7 @@ export function registerSyncCommand(
       }
 
       const notifyArticles = newArticles.filter((article) => {
-        const score =
-          typeof article.importanceScore === "number" ? article.importanceScore : 50;
+        const score = typeof article.importanceScore === "number" ? article.importanceScore : 50;
         return score >= env.notificationMinScore;
       });
 
@@ -43,15 +39,13 @@ export function registerSyncCommand(
         return;
       }
 
-      // Sắp xếp các bài viết mới thu thập được theo tầm quan trọng giảm dần và lấy tối đa 10 bài
+      // Sắp xếp các bài viết mới thu thập được theo tầm quan trọng giảm dần và lấy tối đa 5 bài
       const sortedNew = [...notifyArticles].sort((a, b) => {
-        const scoreA =
-          typeof a.importanceScore === "number" ? a.importanceScore : 50;
-        const scoreB =
-          typeof b.importanceScore === "number" ? b.importanceScore : 50;
+        const scoreA = typeof a.importanceScore === "number" ? a.importanceScore : 50;
+        const scoreB = typeof b.importanceScore === "number" ? b.importanceScore : 50;
         return scoreB - scoreA;
       });
-      const topNew = sortedNew.slice(0, 10);
+      const topNew = sortedNew.slice(0, 5);
 
       await ctx.reply(
         `Đã thu thập thêm ${newArticles.length} bài viết mới. Đang gửi ${topNew.length} bài viết chất lượng nhất.`,
@@ -60,34 +54,26 @@ export function registerSyncCommand(
       // Lấy danh sách người đăng ký nhận tin
       const subscribers = await SubscriberModel.find().lean().exec();
       if (subscribers.length > 0) {
-        // Nhóm các bài viết thành các nhóm tối đa 5 bài
-        const batches: (typeof topNew)[] = [];
-        for (let i = 0; i < topNew.length; i += 5) {
-          batches.push(topNew.slice(i, i + 5));
+        const message = formatArticlesBatch(topNew, ctx.me.username);
+        const keyboard = new InlineKeyboard();
+        if (topNew.length === 5) {
+          keyboard.text("Trang sau", "news_page_2");
         }
 
-        for (const batch of batches) {
-          const message = formatArticlesBatch(batch, ctx.me.username);
-
-          for (const sub of subscribers) {
-            try {
-              await bot.api.sendMessage(sub.chatId, message, {
-                parse_mode: "HTML",
-              });
-            } catch (err) {
-              console.error(
-                `Không thể gửi tin nhắn đến chatId ${sub.chatId}:`,
-                err,
-              );
-            }
+        for (const sub of subscribers) {
+          try {
+            await bot.api.sendMessage(sub.chatId, message, {
+              parse_mode: "HTML",
+              reply_markup: keyboard,
+            });
+          } catch (err) {
+            console.error(`Không thể gửi tin nhắn đến chatId ${sub.chatId}:`, err);
           }
         }
       }
     } catch (error) {
       console.error("Lỗi khi chạy lệnh /sync:", error);
-      await ctx.reply(
-        "Tiến trình thu thập tin tức thất bại. Vui lòng kiểm tra lại cấu hình AI.",
-      );
+      await ctx.reply("Tiến trình thu thập tin tức thất bại. Vui lòng kiểm tra lại cấu hình AI.");
     }
   });
 }
