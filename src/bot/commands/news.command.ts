@@ -1,6 +1,9 @@
 import { type Bot, type Context, InlineKeyboard } from "grammy";
-import { formatNewsList, escapeHtml } from "../../news/news.formatter";
+import { formatNewsList, escapeHtml, formatNewsDetail, hasVietnamese } from "../../news/news.formatter";
 import { NewsService } from "../../news/news.service";
+import { fetchArticleContent } from "../../news/article.fetcher";
+import { AIService } from "../../ai/ai.service";
+import { NewsModel } from "../../news/news.model";
 
 export function registerNewsCommand(
   bot: Bot<Context>,
@@ -14,14 +17,14 @@ export function registerNewsCommand(
       const keyboard = new InlineKeyboard();
       if (latestNews.length > 0) {
         latestNews.forEach((item, index) => {
-          keyboard.text(`${index + 1}`, `detail_${item._id?.toString() || ""}`);
+          keyboard.text(`Tóm tắt ${index + 1}`, `detail_${item._id?.toString() || ""}`);
           if ((index + 1) % 5 === 0) {
             keyboard.row();
           }
         });
       }
 
-      await ctx.reply(formatNewsList(latestNews), {
+      await ctx.reply(formatNewsList(latestNews, ctx.me.username), {
         parse_mode: "HTML",
         reply_markup: keyboard,
       });
@@ -41,23 +44,51 @@ export function registerNewsCommand(
         return;
       }
 
-      // Định dạng chi tiết bài viết kèm theo các gạch đầu dòng tóm tắt và skills
-      const detailText = [
-        `<b>CHI TIẾT & TÓM TẮT TIN TỨC</b>`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `<b>Tiêu đề:</b> ${escapeHtml(item.title)}`,
-        `<b>Nguồn:</b> ${item.source} | <b>Đánh giá:</b> ${item.importanceScore || 50}/100`,
-        item.importanceReason ? `<b>Lý do đánh giá:</b> ${escapeHtml(item.importanceReason)}` : "",
-        item.category ? `<b>Danh mục:</b> #_${item.category.toUpperCase()}` : "",
-        item.tags && item.tags.length > 0 ? `<b>Thẻ (Tags):</b> ${item.tags.map(t => `#${t}`).join(", ")}` : "",
-        item.skills && item.skills.length > 0 ? `<b>Kỹ năng (Skills):</b> ${item.skills.map(s => `<code>${s}</code>`).join(", ")}` : "",
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `<b>Tóm tắt nội dung chính:</b>\n${item.summary || "Chưa có tóm tắt chi tiết."}`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `<a href="${item.url}">Đọc bài viết gốc tại nguồn</a>`
-      ].filter(Boolean).join("\n");
+      // Tự động dịch sang tiếng Việt nếu dữ liệu cũ còn lưu tiếng Anh
+      let updated = false;
+      if (item.summary && !hasVietnamese(item.summary)) {
+        console.log(`[On-the-fly Translate] Đang dịch tóm tắt cho bài: ${item.title}`);
+        const shortSummary = item.summary.length > 600 ? item.summary.slice(0, 600).trim() + "..." : item.summary;
+        const translated = await AIService.translateWithGoogle(shortSummary);
+        if (translated && translated !== item.summary) {
+          item.summary = translated;
+          updated = true;
+        }
+      }
+
+      if (item.title && !hasVietnamese(item.title)) {
+        console.log(`[On-the-fly Translate] Đang dịch tiêu đề cho bài: ${item.title}`);
+        const translated = await AIService.translateWithGoogle(item.title);
+        if (translated && translated !== item.title) {
+          item.title = translated;
+          updated = true;
+        }
+      }
+
+      if (item.importanceReason && !hasVietnamese(item.importanceReason)) {
+        console.log(`[On-the-fly Translate] Đang dịch lý do đánh giá cho bài: ${item.title}`);
+        const translated = await AIService.translateWithGoogle(item.importanceReason);
+        if (translated && translated !== item.importanceReason) {
+          item.importanceReason = translated;
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        await NewsModel.updateOne(
+          { _id: item._id },
+          {
+            title: item.title,
+            summary: item.summary,
+            importanceReason: item.importanceReason,
+          }
+        );
+      }
+
+      const detailText = formatNewsDetail(item);
 
       const keyboard = new InlineKeyboard()
+        .text("Xem tóm tắt chi tiết từ AI 🤖", `summarize_${newsId}`)
         .text("Quay lại danh sách", "back_to_list");
 
       await ctx.editMessageText(detailText, {
@@ -72,16 +103,77 @@ export function registerNewsCommand(
     }
   });
 
+  // Xử lý khi click "Tóm tắt bài viết" - fetch nội dung gốc và AI tóm tắt
+  bot.callbackQuery(/summarize_(.+)/, async (ctx) => {
+    const newsId = ctx.match[1];
+    try {
+      await ctx.answerCallbackQuery({ text: "Đang tóm tắt bài viết..." });
+
+      const item = await newsService.getById(newsId);
+      if (!item) {
+        await ctx.answerCallbackQuery({ text: "Không tìm thấy bài viết." });
+        return;
+      }
+
+      const articleContent = await fetchArticleContent(item.url);
+      if (!articleContent) {
+        const keyboard = new InlineKeyboard()
+          .text("Quay lại", `detail_${newsId}`);
+        await ctx.editMessageText(
+          `<b>TÓM TẮT BÀI VIẾT</b>\n━━━━━━━━━━━━━━━━━━━━\nKhông thể truy cập nội dung bài viết từ nguồn gốc.\nVui lòng đọc trực tiếp tại: <a href="${item.url}">link gốc</a>`,
+          { parse_mode: "HTML", reply_markup: keyboard, link_preview_options: { is_disabled: true } },
+        );
+        return;
+      }
+
+      const result = await AIService.summarizeFullArticle(articleContent);
+
+      const summaryPointsText = result.summaryPoints.map(p => `* ${escapeHtml(p)}`).join("\n");
+      const actionsText = result.actions.map(a => `* ${escapeHtml(a)}`).join("\n");
+      const uncertaintySection = result.uncertainty && result.uncertainty !== "Không có"
+        ? `\n<b>Cần kiểm chứng:</b>\n${escapeHtml(result.uncertainty)}\n`
+        : "";
+
+      const summaryText = [
+        `📰 <b>${escapeHtml(result.title || item.title)}</b>\n`,
+        `<b>Tóm tắt:</b>\n${summaryPointsText}\n`,
+        `<b>Vì sao đáng chú ý:</b> ${escapeHtml(result.whyItMatters)}\n`,
+        uncertaintySection,
+        `<b>Dev nên làm gì:</b>\n${actionsText}\n`,
+        `<b>Mức độ đáng đọc:</b> ${result.readabilityScore}/10`,
+        `<b>Chủ đề:</b> ${result.topics.map(t => `#${t.trim().replace(/\s+/g, "_")}`).join(", ")}`,
+        `<b>Nguồn:</b> <a href="${item.url}">Đọc bài viết gốc tại nguồn</a>`,
+      ].join("\n");
+
+      const keyboard = new InlineKeyboard()
+        .text("Quay lại chi tiết", `detail_${newsId}`)
+        .text("Quay lại danh sách", "back_to_list");
+
+      await ctx.editMessageText(summaryText, {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+        link_preview_options: { is_disabled: true },
+      });
+    } catch (error) {
+      console.error("Lỗi khi tóm tắt bài viết:", error);
+      const keyboard = new InlineKeyboard().text("Quay lại chi tiết", `detail_${newsId}`);
+      await ctx.editMessageText("<b>Đã xảy ra lỗi khi tóm tắt bài viết bằng AI.</b>\nVui lòng thử lại sau.", {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      }).catch(() => {});
+    }
+  });
+
   // Xử lý khi click quay lại danh sách
   bot.callbackQuery("back_to_list", async (ctx) => {
     try {
       const latestNews = await newsService.getLatest(10);
-      const message = formatNewsList(latestNews);
+      const message = formatNewsList(latestNews, ctx.me.username);
 
       const keyboard = new InlineKeyboard();
       if (latestNews.length > 0) {
         latestNews.forEach((item, index) => {
-          keyboard.text(`${index + 1}`, `detail_${item._id?.toString() || ""}`);
+          keyboard.text(`Tóm tắt ${index + 1}`, `detail_${item._id?.toString() || ""}`);
           if ((index + 1) % 5 === 0) {
             keyboard.row();
           }

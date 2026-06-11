@@ -16,7 +16,7 @@ export function createBot(
 ): Bot {
   const bot = new Bot(env.botToken);
 
-  registerStartCommand(bot);
+  registerStartCommand(bot, newsService);
   registerStopCommand(bot);
   registerNewsCommand(bot, newsService);
   registerSyncCommand(bot, newsCollector);

@@ -1,6 +1,16 @@
 import { env, type AiProvider } from "../config/env";
 import { type AIProcessedResult, type ArticleCategory } from "../types/ai";
-import { TECH_NEWS_PROMPT } from "./prompts";
+import { TECH_NEWS_PROMPT, SUMMARIZE_PROMPT } from "./prompts";
+
+export interface DetailedSummaryResult {
+  title: string;
+  summaryPoints: string[];
+  whyItMatters: string;
+  uncertainty: string;
+  actions: string[];
+  readabilityScore: number;
+  topics: string[];
+}
 
 const CATEGORY_OPTIONS = [
   "ai",
@@ -91,7 +101,7 @@ const KEYWORD_RULES: KeywordRule[] = [
 
 
 export class AIService {
-  private static async translateWithGoogle(text: string): Promise<string> {
+  public static async translateWithGoogle(text: string): Promise<string> {
     if (!text.trim()) {
       return "";
     }
@@ -115,6 +125,122 @@ export class AIService {
       console.error("Lỗi Google Translate:", error);
       return text;
     }
+  }
+
+  /**
+   * Tóm tắt bài viết từ nội dung đầy đủ bằng AI.
+   * Trả về cấu trúc DetailedSummaryResult.
+   */
+  static async summarizeFullArticle(content: string): Promise<DetailedSummaryResult> {
+    const truncated = content.length > 3000 ? content.slice(0, 3000) + "..." : content;
+    const prompt = `${SUMMARIZE_PROMPT}\n\nArticle content:\n${truncated}`;
+
+    const primaryProvider = env.aiProvider;
+    const providersToTry: AiProvider[] = [primaryProvider];
+    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
+    for (const p of allProviders) {
+      if (p !== primaryProvider && this.isProviderConfigured(p)) {
+        providersToTry.push(p);
+      }
+    }
+    console.log("[Summarize] Providers to try:", providersToTry);
+
+    for (const provider of providersToTry) {
+      try {
+        console.log(`[Summarize] Đang thử provider: ${provider}`);
+        let rawResult: unknown;
+        switch (provider) {
+          case "openai":
+            rawResult = await this.callChatCompletion(
+              "https://api.openai.com/v1/chat/completions", env.openaiApiKey, env.openaiModel, prompt, SUMMARIZE_PROMPT);
+            break;
+          case "groq":
+            rawResult = await this.callChatCompletion(
+              "https://api.groq.com/openai/v1/chat/completions", env.groqApiKey, env.groqModel, prompt, SUMMARIZE_PROMPT);
+            break;
+          case "openrouter":
+            rawResult = await this.callChatCompletion(
+              "https://openrouter.ai/api/v1/chat/completions", env.openrouterApiKey, env.openrouterModel, prompt, SUMMARIZE_PROMPT,
+              { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" });
+            break;
+          case "gemini":
+          default:
+            rawResult = await this.callGeminiBatch(prompt);
+            break;
+        }
+
+        const raw = this.isRecord(rawResult) ? rawResult : {};
+        const title = typeof raw.title === "string" ? raw.title.trim() : "";
+        const summaryPoints = Array.isArray(raw.summaryPoints)
+          ? raw.summaryPoints.map((p: unknown) => String(p).trim())
+          : [];
+        const whyItMatters = typeof raw.whyItMatters === "string" ? raw.whyItMatters.trim() : "";
+        const uncertainty = typeof raw.uncertainty === "string" ? raw.uncertainty.trim() : "";
+        const actions = Array.isArray(raw.actions)
+          ? raw.actions.map((a: unknown) => String(a).trim())
+          : [];
+        const readabilityScore = typeof raw.readabilityScore === "number" ? raw.readabilityScore : 7;
+        const topics = Array.isArray(raw.topics)
+          ? raw.topics.map((t: unknown) => String(t).trim().toLowerCase())
+          : [];
+
+        if (summaryPoints.length > 0) {
+          const hasVietnamese = (text: string) =>
+            /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
+
+          let finalTitle = title;
+          if (finalTitle && !hasVietnamese(finalTitle)) {
+            finalTitle = await this.translateWithGoogle(finalTitle);
+          }
+
+          const finalPoints = [...summaryPoints];
+          for (let i = 0; i < finalPoints.length; i++) {
+            if (!hasVietnamese(finalPoints[i])) {
+              finalPoints[i] = await this.translateWithGoogle(finalPoints[i]);
+            }
+          }
+
+          let finalWhy = whyItMatters;
+          if (finalWhy && !hasVietnamese(finalWhy)) {
+            finalWhy = await this.translateWithGoogle(finalWhy);
+          }
+
+          let finalUncertainty = uncertainty;
+          if (finalUncertainty && finalUncertainty !== "Không có" && !hasVietnamese(finalUncertainty)) {
+            finalUncertainty = await this.translateWithGoogle(finalUncertainty);
+          }
+
+          const finalActions = [...actions];
+          for (let i = 0; i < finalActions.length; i++) {
+            if (!hasVietnamese(finalActions[i])) {
+              finalActions[i] = await this.translateWithGoogle(finalActions[i]);
+            }
+          }
+
+          return {
+            title: this.normalizeDevTerms(finalTitle),
+            summaryPoints: finalPoints.map(p => this.normalizeDevTerms(p)),
+            whyItMatters: this.normalizeDevTerms(finalWhy),
+            uncertainty: this.normalizeDevTerms(finalUncertainty),
+            actions: finalActions.map(a => this.normalizeDevTerms(a)),
+            readabilityScore,
+            topics,
+          };
+        }
+      } catch (error) {
+        console.warn(`[Summarize] Thất bại với ${provider}:`, (error as Error).message);
+      }
+    }
+
+    return {
+      title: "Không thể tải chi tiết bài viết.",
+      summaryPoints: ["Đã xảy ra sự cố khi xử lý bài viết bằng AI.", "Vui lòng thử lại sau."],
+      whyItMatters: "Không có thông tin.",
+      uncertainty: "Không có",
+      actions: ["Đọc trực tiếp bài viết từ nguồn gốc."],
+      readabilityScore: 0,
+      topics: ["error"],
+    };
   }
 
   static async getFallback(
@@ -195,17 +321,10 @@ export class AIService {
             break;
         }
         console.log(`[AI Failover] Xử lý thành công bằng: ${provider}`);
-        // AI trả tiếng Anh, dùng Google Translate dịch sang tiếng Việt
-        const [translatedTitle, translatedSummary, translatedReason] = await Promise.all([
-          this.translateWithGoogle(result.titleVi),
-          this.translateWithGoogle(result.summaryVi),
-          this.translateWithGoogle(result.importanceReason),
-        ]);
         return {
           ...result,
-          titleVi: this.normalizeDevTerms(translatedTitle || result.titleVi),
-          summaryVi: this.normalizeDevTerms(translatedSummary || result.summaryVi),
-          importanceReason: translatedReason || result.importanceReason,
+          titleVi: this.normalizeDevTerms(result.titleVi),
+          summaryVi: this.normalizeDevTerms(result.summaryVi),
         };
       } catch (error) {
         console.warn(`[AI Failover] Thất bại với ${provider}. Lỗi: ${(error as Error).message}`);
@@ -271,6 +390,7 @@ export class AIService {
               env.openrouterApiKey,
               env.openrouterModel,
               batchPrompt,
+              TECH_NEWS_PROMPT,
               { "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele", "X-Title": "Chatbot News Telegram" },
             );
             break;
@@ -282,8 +402,12 @@ export class AIService {
 
         const parsed = this.parseBatchResult(rawResult, articles);
         if (parsed) {
-          console.log(`[AI Batch] Batch xử lý thành công bằng: ${provider}`);
-          return parsed;
+          console.log(`[AI Batch] Batch xử lý thành công bằng: ${provider}.`);
+          return parsed.map((result) => ({
+            ...result,
+            titleVi: this.normalizeDevTerms(result.titleVi),
+            summaryVi: this.normalizeDevTerms(result.summaryVi),
+          }));
         }
       } catch (error) {
         console.warn(`[AI Batch] Thất bại với ${provider}. Lỗi: ${(error as Error).message}`);
@@ -313,7 +437,7 @@ export class AIService {
     return `${TECH_NEWS_PROMPT}
 
 Process ALL of the following ${articles.length} articles and return a JSON object with key "articles" containing an array of results in the SAME order.
-Each element must match the schema: { titleVi, summaryVi, category, tags, importanceScore, importanceReason }.
+Each element must match the schema: { title, summary, category, tags, importanceScore, importanceReason }.
 
 Articles:
 ${JSON.stringify(articlesJson, null, 2)}`;
@@ -324,6 +448,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     apiKey: string,
     model: string,
     prompt: string,
+    systemPrompt: string = TECH_NEWS_PROMPT,
     extraHeaders: Record<string, string> = {},
   ): Promise<unknown> {
     if (!apiKey) throw new Error(`API key chưa được cấu hình cho ${endpoint}`);
@@ -338,7 +463,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: TECH_NEWS_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: prompt },
         ],
         response_format: { type: "json_object" },
@@ -681,19 +806,24 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     // AI trả tiếng Anh (field "title" và "summary"), giữ nguyên để dịch sau
     let summaryEn = typeof raw.summary === "string" ? raw.summary.trim() : "";
     if (!summaryEn || summaryEn.toLowerCase().includes("article url:") || summaryEn.startsWith("http")) {
-      summaryEn = this.truncate(this.cleanContent(content), 350) || "No detailed description available.";
+      summaryEn = this.truncate(this.cleanContent(content), 300) || "No detailed description available.";
+    } else {
+      summaryEn = this.truncate(summaryEn, 300);
     }
 
-    const titleEn = typeof raw.title === "string" && raw.title.trim()
+    let titleEn = typeof raw.title === "string" && raw.title.trim()
       ? raw.title.trim()
       : title;
+    titleEn = this.truncate(titleEn, 120);
+
     const tags = Array.from(new Set([
       ...this.normalizeTags(raw.tags),
       ...baseline.tags,
     ])).slice(0, 10);
-    const importanceReason = typeof raw.importanceReason === "string" && raw.importanceReason.trim()
+    let importanceReason = typeof raw.importanceReason === "string" && raw.importanceReason.trim()
       ? raw.importanceReason.trim()
       : baseline.importanceReason;
+    importanceReason = this.truncate(importanceReason, 150);
 
     return {
       titleVi: titleEn,

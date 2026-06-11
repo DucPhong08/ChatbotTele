@@ -67,7 +67,7 @@ export function registerSyncCommand(
         }
 
         for (const batch of batches) {
-          const message = formatArticlesBatch(batch);
+          const message = formatArticlesBatch(batch, ctx.me.username);
 
           for (const sub of subscribers) {
             try {

@@ -53,8 +53,19 @@ export function startCollectNewsJob(
             batches.push(topNew.slice(i, i + 5));
           }
 
+          let botUsername = bot.botInfo?.username;
+          if (!botUsername) {
+            try {
+              const me = await bot.api.getMe();
+              botUsername = me.username;
+            } catch (err) {
+              console.warn("Không thể lấy username bot:", err);
+              botUsername = "";
+            }
+          }
+
           for (const batch of batches) {
-            const message = formatArticlesBatch(batch);
+            const message = formatArticlesBatch(batch, botUsername);
 
             for (const sub of subscribers) {
               try {
