@@ -95,18 +95,31 @@ export function startCollectNewsJob(
                 }
               }
 
-              const message = formatArticlesBatch(userArticles, botUsername, preferred);
+              const lang = sub.language || "vi";
+              const message = formatArticlesBatch(userArticles, botUsername, preferred, lang);
               const keyboard = new InlineKeyboard();
               if (userArticles.length === 5) {
-                keyboard.text("Trang sau", "news_page_2");
+                const nextLabel = lang === "en" ? "▶️ Next" : "▶️ Sau";
+                keyboard.text(nextLabel, "news_page_2");
               }
 
               await bot.api.sendMessage(sub.chatId, message, {
                 parse_mode: "HTML",
                 reply_markup: keyboard,
               });
-            } catch (err) {
+            } catch (err: any) {
               console.error(`Không thể gửi tin nhắn tự động đến chatId ${sub.chatId}:`, err);
+              // Tự động dọn dẹp subscriber nếu họ đã chặn bot hoặc chat không còn tồn tại
+              const isBlocked =
+                err?.description?.includes("blocked") ||
+                err?.description?.includes("chat not found") ||
+                err?.code === 403;
+              if (isBlocked) {
+                console.log(
+                  `[Auto-cleanup] Đang xóa subscriber đã chặn bot hoặc chat không tồn tại: ${sub.chatId}`,
+                );
+                await SubscriberModel.deleteOne({ chatId: sub.chatId });
+              }
             }
           }
         }

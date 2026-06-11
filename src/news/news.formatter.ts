@@ -12,27 +12,48 @@ export function formatNewsList(
   botUsername: string,
   startIndex = 1,
   categories: string | string[] = "all",
+  language: "vi" | "en" = "vi",
 ): string {
+  const isEn = language === "en";
+
   if (items.length === 0) {
-    return "Chưa có tin tức nào được lưu. Vui lòng đợi tiến trình thu thập tin chạy.";
+    return isEn
+      ? "No new articles. Please check back later!"
+      : "Chưa có tin tức nào mới. Vui lòng quay lại sau!";
   }
 
   const page = Math.floor((startIndex - 1) / 5) + 1;
   const cats = Array.isArray(categories) ? categories : [categories];
-  const categoryStr = cats.includes("all") ? "Tất cả" : cats.map((c) => c.toUpperCase()).join(", ");
-  const header = `<b>DANH SÁCH TIN TỨC MỚI NHẤT (Trang ${page} | Thể loại: ${categoryStr})</b>\n\n`;
+
+  let categoryStr = "";
+  if (cats.includes("all")) {
+    categoryStr = isEn ? "All" : "Tất cả";
+  } else {
+    categoryStr = cats.map((c) => c.toUpperCase()).join(", ");
+  }
+
+  const header = isEn
+    ? `⚡ <b>Latest Tech News</b> (Page ${page} | ${categoryStr})\n────────────────\n`
+    : `⚡ <b>Tin Công Nghệ Mới</b> (Trang ${page} | ${categoryStr})\n────────────────\n`;
 
   const body = items
     .map((item, index) => {
-      let cleanSummary = item.summary ? item.summary.trim() : "";
-      if (cleanSummary.length > 300) {
-        cleanSummary = cleanSummary.slice(0, 300).trim() + "...";
+      const title = isEn ? item.titleEn || item.title : item.title;
+      let summary = isEn ? item.summaryEn || item.summary || "" : item.summary || "";
+
+      let cleanSummary = summary.trim();
+      if (cleanSummary.length > 200) {
+        cleanSummary = cleanSummary.slice(0, 200).trim() + "...";
       }
       const detailLink = `https://t.me/${botUsername}?start=detail_${item._id?.toString() || ""}`;
+
+      const sourceLabel = isEn ? "Source" : "Nguồn";
+      const linkLabel = isEn ? "Original link" : "Link gốc";
+
       return [
-        `<b>${startIndex + index}. <a href="${detailLink}">${escapeHtml(item.title)}</a></b>`,
+        `<b>${startIndex + index}. <a href="${detailLink}">${escapeHtml(title)}</a></b>`,
         cleanSummary ? `<i>${escapeHtml(cleanSummary)}</i>` : "",
-        `Nguồn: ${item.source} | <a href="${item.url}">Đọc bài viết gốc tại nguồn</a>`,
+        `${sourceLabel}: ${item.source} | <a href="${item.url}">${linkLabel}</a>`,
       ]
         .filter(Boolean)
         .join("\n");
@@ -42,29 +63,62 @@ export function formatNewsList(
   return header + body;
 }
 
-export function formatNewsDetail(item: NewsView): string {
-  let displaySummary = item.summary || "Chưa có tóm tắt chi tiết.";
+export function formatNewsDetail(item: NewsView, language: "vi" | "en" = "vi"): string {
+  const isEn = language === "en";
+
+  const title = isEn ? item.titleEn || item.title : item.title;
+  const summary = isEn ? item.summaryEn || item.summary || "" : item.summary || "";
+  const importanceReason = isEn
+    ? item.importanceReasonEn || item.importanceReason || ""
+    : item.importanceReason || "";
+
+  let displaySummary =
+    summary || (isEn ? "No detailed summary available." : "Chưa có tóm tắt chi tiết.");
   if (displaySummary.length > 800) {
     displaySummary = displaySummary.slice(0, 800).trim() + "...";
   }
 
+  const labels = isEn
+    ? {
+        section: "🔹 <b>ARTICLE DETAILS</b>",
+        title: "Title",
+        source: "Source",
+        rating: "Rating",
+        whyRead: "Why read this",
+        category: "Category",
+        skills: "Skills",
+        summary: "Short summary",
+        originalLink: "Read original article here",
+      }
+    : {
+        section: "🔹 <b>CHI TIẾT BÀI VIẾT</b>",
+        title: "Tiêu đề",
+        source: "Nguồn",
+        rating: "Đánh giá",
+        whyRead: "Tại sao cần đọc",
+        category: "Thể loại",
+        skills: "Kỹ năng",
+        summary: "Tóm tắt ngắn",
+        originalLink: "Đọc bài viết gốc tại nguồn",
+      };
+
   return [
-    `<b>CHI TIẾT & TÓM TẮT TIN TỨC</b>`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `<b>Tiêu đề:</b> ${escapeHtml(item.title)}`,
-    `<b>Nguồn:</b> ${item.source} | <b>Đánh giá:</b> ${item.importanceScore || 50}/100`,
-    item.importanceReason ? `<b>Lý do đánh giá:</b> ${escapeHtml(item.importanceReason)}` : "",
-    item.category ? `<b>Danh mục:</b> #_${item.category.toUpperCase()}` : "",
+    labels.section,
+    `────────────────`,
+    `<b>${labels.title}:</b> ${escapeHtml(title)}`,
+    `<b>${labels.source}:</b> ${item.source} | <b>${labels.rating}:</b> ${item.importanceScore || 50}/100`,
+    importanceReason ? `<b>${labels.whyRead}:</b> <i>${escapeHtml(importanceReason)}</i>` : "",
+    item.category ? `<b>${labels.category}:</b> #_${item.category.toUpperCase()}` : "",
     item.tags && item.tags.length > 0
-      ? `<b>Thẻ (Tags):</b> ${item.tags.map((t) => `#${t}`).join(", ")}`
+      ? `<b>Tags:</b> ${item.tags.map((t) => `#${t}`).join(", ")}`
       : "",
     item.skills && item.skills.length > 0
-      ? `<b>Kỹ năng (Skills):</b> ${item.skills.map((s) => `<code>${s}</code>`).join(", ")}`
+      ? `<b>${labels.skills}:</b> ${item.skills.map((s) => `<code>${s}</code>`).join(", ")}`
       : "",
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `<b>Mô tả ngắn gọn:</b>\n${displaySummary}`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `<a href="${item.url}">Đọc bài viết gốc tại nguồn</a>`,
+    `────────────────`,
+    `<b>${labels.summary}:</b>\n${displaySummary}`,
+    `────────────────`,
+    `🔗 <a href="${item.url}">${labels.originalLink}</a>`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -74,23 +128,38 @@ export function formatArticlesBatch(
   articles: NewsView[],
   botUsername: string,
   categories: string | string[] = "all",
+  language: "vi" | "en" = "vi",
 ): string {
+  const isEn = language === "en";
   const cats = Array.isArray(categories) ? categories : [categories];
-  const categoryStr = cats.includes("all")
-    ? ""
-    : ` (Thể loại: ${cats.map((c) => c.toUpperCase()).join(", ")})`;
-  const header = `<b>TIN CÔNG NGHỆ MỚI NHẤT${categoryStr}</b>\n\n`;
+
+  let categoryStr = "";
+  if (!cats.includes("all")) {
+    categoryStr = ` (${cats.map((c) => c.toUpperCase()).join(", ")})`;
+  }
+
+  const header = isEn
+    ? `⚡ <b>LATEST TECH NEWS${categoryStr}</b>\n────────────────\n`
+    : `⚡ <b>BẢN TIN MỚI NHẤT${categoryStr}</b>\n────────────────\n`;
+
   const body = articles
     .map((article, index) => {
-      let cleanSummary = article.summary ? article.summary.trim() : "";
-      if (cleanSummary.length > 300) {
-        cleanSummary = cleanSummary.slice(0, 300).trim() + "...";
+      const title = isEn ? article.titleEn || article.title : article.title;
+      let summary = isEn ? article.summaryEn || article.summary || "" : article.summary || "";
+
+      let cleanSummary = summary.trim();
+      if (cleanSummary.length > 200) {
+        cleanSummary = cleanSummary.slice(0, 200).trim() + "...";
       }
       const detailLink = `https://t.me/${botUsername}?start=detail_${article._id?.toString() || ""}`;
+
+      const sourceLabel = isEn ? "Source" : "Nguồn";
+      const linkLabel = isEn ? "Original link" : "Link gốc";
+
       return [
-        `<b>${index + 1}. <a href="${detailLink}">${escapeHtml(article.title)}</a></b>`,
+        `<b>${index + 1}. <a href="${detailLink}">${escapeHtml(title)}</a></b>`,
         cleanSummary ? `<i>${escapeHtml(cleanSummary)}</i>` : "",
-        `Nguồn: ${article.source} | <a href="${article.url}">Đọc bài viết gốc tại nguồn</a>`,
+        `${sourceLabel}: ${article.source} | <a href="${article.url}">${linkLabel}</a>`,
       ]
         .filter(Boolean)
         .join("\n");

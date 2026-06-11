@@ -2,6 +2,7 @@ import { env, type AiProvider } from "../config/env";
 import { type AIProcessedResult, type ArticleCategory } from "../types/ai";
 import { type NewsView } from "../types/news";
 import { TECH_NEWS_PROMPT, SUMMARIZE_PROMPT, PARSE_PREFERENCES_PROMPT } from "./prompts";
+import { hasVietnamese } from "../news/news.formatter";
 
 export interface DetailedSummaryResult {
   title: string;
@@ -24,10 +25,12 @@ const CATEGORY_OPTIONS = [
   "other",
 ] as const;
 
-type InferredMetadata = Pick<
-  AIProcessedResult,
-  "category" | "tags" | "importanceScore" | "importanceReason"
->;
+type InferredMetadata = {
+  category: ArticleCategory;
+  tags: string[];
+  importanceScore: number;
+  importanceReason: string;
+};
 
 type KeywordRule = {
   category: ArticleCategory;
@@ -152,14 +155,17 @@ const KEYWORD_RULES: KeywordRule[] = [
 ];
 
 export class AIService {
-  public static async translateWithGoogle(text: string): Promise<string> {
+  public static async translateWithGoogle(
+    text: string,
+    targetLang: "vi" | "en" = "vi",
+  ): Promise<string> {
     if (!text.trim()) {
       return "";
     }
 
     try {
-      console.log(`[Google Translate] Đang dịch: "${text.slice(0, 50)}..."`);
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=vi&dt=t&q=${encodeURIComponent(text)}`;
+      console.log(`[Google Translate] Đang dịch sang ${targetLang}: "${text.slice(0, 50)}..."`);
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -182,9 +188,25 @@ export class AIService {
    * Tóm tắt bài viết từ nội dung đầy đủ bằng AI.
    * Trả về cấu trúc DetailedSummaryResult.
    */
-  static async summarizeFullArticle(content: string): Promise<DetailedSummaryResult> {
+  static async summarizeFullArticle(
+    content: string,
+    language: "vi" | "en" = "vi",
+  ): Promise<DetailedSummaryResult> {
     const truncated = content.length > 3000 ? content.slice(0, 3000) + "..." : content;
-    const prompt = `${SUMMARIZE_PROMPT}\n\nArticle content:\n${truncated}`;
+
+    let promptSystem = SUMMARIZE_PROMPT;
+    if (language === "en") {
+      promptSystem = promptSystem
+        .replace("Vietnamese tech news editor", "English tech news editor")
+        .replace("1. Write in Vietnamese with proper accents.", "1. Write in English.")
+        .replace(
+          '5. "title": rewrite the title in Vietnamese',
+          '5. "title": rewrite the title in English',
+        )
+        .replace("Không có", "None");
+    }
+
+    const prompt = `${promptSystem}\n\nArticle content:\n${truncated}`;
 
     const primaryProvider = env.aiProvider;
     const providersToTry: AiProvider[] = [primaryProvider];
@@ -207,7 +229,7 @@ export class AIService {
               env.openaiApiKey,
               env.openaiModel,
               prompt,
-              SUMMARIZE_PROMPT,
+              promptSystem,
             );
             break;
           case "groq":
@@ -216,7 +238,7 @@ export class AIService {
               env.groqApiKey,
               env.groqModel,
               prompt,
-              SUMMARIZE_PROMPT,
+              promptSystem,
             );
             break;
           case "openrouter":
@@ -226,7 +248,7 @@ export class AIService {
                 env.openrouterApiKey,
                 env.openrouterModel,
                 prompt,
-                SUMMARIZE_PROMPT,
+                promptSystem,
                 {
                   "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
                   "X-Title": "Chatbot News Telegram",
@@ -245,7 +267,7 @@ export class AIService {
                   env.openrouterApiKey,
                   env.openrouterFallbackModel,
                   prompt,
-                  SUMMARIZE_PROMPT,
+                  promptSystem,
                   {
                     "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
                     "X-Title": "Chatbot News Telegram",
@@ -279,39 +301,46 @@ export class AIService {
           : [];
 
         if (summaryPoints.length > 0) {
-          const hasVietnamese = (text: string) =>
-            /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
+          const isEn = language === "en";
+          const needsTranslate = (text: string) => {
+            if (isEn) {
+              return hasVietnamese(text);
+            } else {
+              return !hasVietnamese(text);
+            }
+          };
 
           let finalTitle = title;
-          if (finalTitle && !hasVietnamese(finalTitle)) {
-            finalTitle = await this.translateWithGoogle(finalTitle);
+          if (finalTitle && needsTranslate(finalTitle)) {
+            finalTitle = await this.translateWithGoogle(finalTitle, language);
           }
 
           const finalPoints = [...summaryPoints];
           for (let i = 0; i < finalPoints.length; i++) {
-            if (!hasVietnamese(finalPoints[i])) {
-              finalPoints[i] = await this.translateWithGoogle(finalPoints[i]);
+            if (needsTranslate(finalPoints[i])) {
+              finalPoints[i] = await this.translateWithGoogle(finalPoints[i], language);
             }
           }
 
           let finalWhy = whyItMatters;
-          if (finalWhy && !hasVietnamese(finalWhy)) {
-            finalWhy = await this.translateWithGoogle(finalWhy);
+          if (finalWhy && needsTranslate(finalWhy)) {
+            finalWhy = await this.translateWithGoogle(finalWhy, language);
           }
 
           let finalUncertainty = uncertainty;
           if (
             finalUncertainty &&
             finalUncertainty !== "Không có" &&
-            !hasVietnamese(finalUncertainty)
+            finalUncertainty !== "None" &&
+            needsTranslate(finalUncertainty)
           ) {
-            finalUncertainty = await this.translateWithGoogle(finalUncertainty);
+            finalUncertainty = await this.translateWithGoogle(finalUncertainty, language);
           }
 
           const finalActions = [...actions];
           for (let i = 0; i < finalActions.length; i++) {
-            if (!hasVietnamese(finalActions[i])) {
-              finalActions[i] = await this.translateWithGoogle(finalActions[i]);
+            if (needsTranslate(finalActions[i])) {
+              finalActions[i] = await this.translateWithGoogle(finalActions[i], language);
             }
           }
 
@@ -630,7 +659,7 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
     const cleanContent = this.cleanContent(content);
     const summarySeed = cleanContent
       ? this.truncate(cleanContent, 350)
-      : "Bài viết không cung cấp mô tả chi tiết trong RSS.";
+      : "No detailed description available.";
 
     const [titleVi, translatedSummary] = await Promise.all([
       this.translateWithGoogle(title),
@@ -639,9 +668,15 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
 
     return {
       titleVi: titleVi || title,
+      titleEn: title,
       summaryVi: this.formatFallbackSummary(translatedSummary, source, baseline),
-      ...baseline,
+      summaryEn: summarySeed,
+      category: baseline.category,
+      tags: baseline.tags,
       skills: [],
+      importanceScore: baseline.importanceScore,
+      importanceReasonVi: baseline.importanceReason,
+      importanceReasonEn: `Article from ${source}.`,
     };
   }
 
@@ -702,7 +737,11 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
         return {
           ...result,
           titleVi: this.normalizeDevTerms(result.titleVi),
+          titleEn: this.normalizeDevTerms(result.titleEn),
           summaryVi: this.normalizeDevTerms(result.summaryVi),
+          summaryEn: this.normalizeDevTerms(result.summaryEn),
+          importanceReasonVi: this.normalizeDevTerms(result.importanceReasonVi),
+          importanceReasonEn: this.normalizeDevTerms(result.importanceReasonEn),
         };
       } catch (error) {
         console.warn(`[AI Failover] Thất bại với ${provider}. Lỗi: ${(error as Error).message}`);
@@ -821,7 +860,11 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
           return parsed.map((result) => ({
             ...result,
             titleVi: this.normalizeDevTerms(result.titleVi),
+            titleEn: this.normalizeDevTerms(result.titleEn),
             summaryVi: this.normalizeDevTerms(result.summaryVi),
+            summaryEn: this.normalizeDevTerms(result.summaryEn),
+            importanceReasonVi: this.normalizeDevTerms(result.importanceReasonVi),
+            importanceReasonEn: this.normalizeDevTerms(result.importanceReasonEn),
           }));
         }
       } catch (error) {
@@ -983,7 +1026,15 @@ ${JSON.stringify(articlesJson, null, 2)}`;
                 type: "OBJECT",
                 properties: {
                   titleVi: { type: "STRING" },
-                  summaryVi: { type: "STRING" },
+                  titleEn: { type: "STRING" },
+                  summaryVi: {
+                    type: "ARRAY",
+                    items: { type: "STRING" },
+                  },
+                  summaryEn: {
+                    type: "ARRAY",
+                    items: { type: "STRING" },
+                  },
                   category: {
                     type: "STRING",
                     enum: CATEGORY_OPTIONS,
@@ -992,16 +1043,25 @@ ${JSON.stringify(articlesJson, null, 2)}`;
                     type: "ARRAY",
                     items: { type: "STRING" },
                   },
+                  skills: {
+                    type: "ARRAY",
+                    items: { type: "STRING" },
+                  },
                   importanceScore: { type: "INTEGER" },
-                  importanceReason: { type: "STRING" },
+                  importanceReasonVi: { type: "STRING" },
+                  importanceReasonEn: { type: "STRING" },
                 },
                 required: [
                   "titleVi",
+                  "titleEn",
                   "summaryVi",
+                  "summaryEn",
                   "category",
                   "tags",
+                  "skills",
                   "importanceScore",
-                  "importanceReason",
+                  "importanceReasonVi",
+                  "importanceReasonEn",
                 ],
               },
               temperature: 0.3,
@@ -1243,30 +1303,53 @@ ${JSON.stringify(articlesJson, null, 2)}`;
         ? baseline.importanceScore
         : this.clampScore(aiScore, baseline.importanceScore - 25, baseline.importanceScore + 25);
 
-    // AI trả trường summary (có thể là array các gạch đầu dòng hoặc string đơn lẻ)
-    let summaryStr = "";
-    if (Array.isArray(raw.summary)) {
-      summaryStr = raw.summary
+    // Parse Vietnamese summary
+    const rawSummaryVi = raw.summaryVi ?? raw.summary;
+    let summaryViStr = "";
+    if (Array.isArray(rawSummaryVi)) {
+      summaryViStr = rawSummaryVi
         .map((s) => String(s).trim())
         .filter(Boolean)
         .map((s) => (s.startsWith("-") || s.startsWith("*") ? s : `- ${s}`))
         .join("\n");
-    } else if (typeof raw.summary === "string") {
-      summaryStr = raw.summary.trim();
+    } else if (typeof rawSummaryVi === "string") {
+      summaryViStr = rawSummaryVi.trim();
     }
 
-    if (
-      !summaryStr ||
-      summaryStr.toLowerCase().includes("article url:") ||
-      summaryStr.startsWith("http")
-    ) {
-      summaryStr =
-        this.truncate(this.cleanContent(content), 300) || "No detailed description available.";
-    } else {
-      summaryStr = this.truncate(summaryStr, 600);
+    // Parse English summary
+    const rawSummaryEn = raw.summaryEn;
+    let summaryEnStr = "";
+    if (Array.isArray(rawSummaryEn)) {
+      summaryEnStr = rawSummaryEn
+        .map((s) => String(s).trim())
+        .filter(Boolean)
+        .map((s) => (s.startsWith("-") || s.startsWith("*") ? s : `- ${s}`))
+        .join("\n");
+    } else if (typeof rawSummaryEn === "string") {
+      summaryEnStr = rawSummaryEn.trim();
     }
 
-    let titleEn = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : title;
+    // Fallbacks if summaries are empty
+    const defaultSummary =
+      this.truncate(this.cleanContent(content), 300) || "No detailed description available.";
+    if (!summaryViStr) {
+      summaryViStr = defaultSummary;
+    }
+    if (!summaryEnStr) {
+      summaryEnStr = defaultSummary;
+    }
+
+    // Parse titles
+    let titleVi =
+      typeof raw.titleVi === "string" && raw.titleVi.trim()
+        ? raw.titleVi.trim()
+        : typeof raw.title === "string" && raw.title.trim()
+          ? raw.title.trim()
+          : title;
+    let titleEn =
+      typeof raw.titleEn === "string" && raw.titleEn.trim() ? raw.titleEn.trim() : title;
+
+    titleVi = this.truncate(titleVi, 120);
     titleEn = this.truncate(titleEn, 120);
 
     const tags = Array.from(new Set([...this.normalizeTags(raw.tags), ...baseline.tags])).slice(
@@ -1274,20 +1357,34 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       10,
     );
     const skills = this.normalizeTags(raw.skills);
-    let importanceReason =
-      typeof raw.importanceReason === "string" && raw.importanceReason.trim()
-        ? raw.importanceReason.trim()
-        : baseline.importanceReason;
-    importanceReason = this.truncate(importanceReason, 150);
+
+    // Parse importance reasons
+    let importanceReasonVi =
+      typeof raw.importanceReasonVi === "string" && raw.importanceReasonVi.trim()
+        ? raw.importanceReasonVi.trim()
+        : typeof raw.importanceReason === "string" && raw.importanceReason.trim()
+          ? raw.importanceReason.trim()
+          : baseline.importanceReason;
+
+    let importanceReasonEn =
+      typeof raw.importanceReasonEn === "string" && raw.importanceReasonEn.trim()
+        ? raw.importanceReasonEn.trim()
+        : `Relevant news for developers from ${source}.`;
+
+    importanceReasonVi = this.truncate(importanceReasonVi, 150);
+    importanceReasonEn = this.truncate(importanceReasonEn, 150);
 
     return {
-      titleVi: titleEn,
-      summaryVi: summaryStr,
+      titleVi,
+      titleEn,
+      summaryVi: summaryViStr,
+      summaryEn: summaryEnStr,
       category,
       tags,
       skills,
       importanceScore,
-      importanceReason,
+      importanceReasonVi,
+      importanceReasonEn,
     };
   }
 

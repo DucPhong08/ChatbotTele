@@ -6,15 +6,18 @@ export type NewsDocument = HydratedDocument<News>;
 const newsSchema = new Schema<News>(
   {
     title: { type: String, required: true, trim: true },
+    titleEn: { type: String, trim: true },
     url: { type: String, required: true, trim: true },
     source: { type: String, required: true, trim: true },
     publishedAt: { type: Date, required: true },
     summary: { type: String, trim: true },
+    summaryEn: { type: String, trim: true },
     category: { type: String, trim: true },
     tags: { type: [String], default: [] },
     skills: { type: [String], default: [] },
     importanceScore: { type: Number, default: 50 },
     importanceReason: { type: String, trim: true },
+    importanceReasonEn: { type: String, trim: true },
   },
   {
     timestamps: true,

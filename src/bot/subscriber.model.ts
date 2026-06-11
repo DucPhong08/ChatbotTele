@@ -8,6 +8,7 @@ const subscriberSchema = new Schema<Subscriber>(
     chatId: { type: Number, required: true, unique: true },
     preferredCategories: { type: [String], default: ["all"] },
     customPrompt: { type: String, default: "" },
+    language: { type: String, enum: ["vi", "en"], default: "vi" },
   },
   {
     timestamps: true,

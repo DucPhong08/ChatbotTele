@@ -221,7 +221,7 @@ export function registerFeedCommands(bot: Bot<Context>): void {
 
       const adminMessage =
         `<b>ĐỀ XUẤT NGUỒN TIN MỚI PENDING</b>\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `────────────────\n` +
         `• <b>Người gửi:</b> @${ctx.from?.username || ctx.from?.first_name || "N/A"} (ID: ${chatId})\n` +
         `• <b>Tên nguồn:</b> ${feed.source}\n` +
         `• <b>Link RSS:</b> <code>${feed.url}</code>`;

@@ -121,15 +121,18 @@ export class NewsCollector {
 
             collectedItems.push({
               title: aiResult.titleVi,
+              titleEn: aiResult.titleEn,
               url: item.url,
               source: feed.source,
               publishedAt: item.publishedAt,
               summary: aiResult.summaryVi,
+              summaryEn: aiResult.summaryEn,
               category: aiResult.category,
               tags: aiResult.tags,
               skills: aiResult.skills.length > 0 ? aiResult.skills : feed.skills,
               importanceScore: aiResult.importanceScore,
-              importanceReason: aiResult.importanceReason,
+              importanceReason: aiResult.importanceReasonVi,
+              importanceReasonEn: aiResult.importanceReasonEn,
             });
           }
         }

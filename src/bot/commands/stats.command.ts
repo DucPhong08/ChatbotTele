@@ -34,14 +34,14 @@ export function registerStatsCommand(bot: Bot<Context>): void {
 
       const statsText = [
         "<b>THỐNG KÊ BOT</b>",
-        "━━━━━━━━━━━━━━━━━━━━",
+        "────────────────",
         `Tổng bài viết trong DB: ${totalNews}`,
         `Bài mới trong 24h qua: ${last24h}`,
         `Subscriber đăng ký: ${subscriberCount}`,
         `AI Provider chính: ${env.aiProvider}`,
         `AI Model đang dùng: <code>${activeModel}</code>`,
         `Môi trường: ${process.env.APP_ENV || "local"}`,
-        "━━━━━━━━━━━━━━━━━━━━",
+        "────────────────",
       ].join("\n");
 
       await ctx.reply(statsText, { parse_mode: "HTML" });

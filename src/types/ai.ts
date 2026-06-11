@@ -10,10 +10,13 @@ export type ArticleCategory =
 
 export interface AIProcessedResult {
   titleVi: string;
+  titleEn: string;
   summaryVi: string;
+  summaryEn: string;
   category: ArticleCategory;
   tags: string[];
   skills: string[];
   importanceScore: number;
-  importanceReason: string;
+  importanceReasonVi: string;
+  importanceReasonEn: string;
 }

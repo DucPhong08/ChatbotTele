@@ -10,6 +10,7 @@ import { registerStopCommand } from "./commands/stop.command";
 import { registerSyncCommand } from "./commands/sync.command";
 import { registerFeedCommands } from "./commands/feed.command";
 import { registerCategoryCommand } from "./commands/category.command";
+import { registerLanguageCommand } from "./commands/language.command";
 import { handleBotError } from "./middlewares/error.middleware";
 
 export function createBot(newsService: NewsService, newsCollector: NewsCollector): Bot {
@@ -23,6 +24,7 @@ export function createBot(newsService: NewsService, newsCollector: NewsCollector
   registerStatsCommand(bot);
   registerFeedCommands(bot);
   registerCategoryCommand(bot);
+  registerLanguageCommand(bot);
   bot.catch(handleBotError);
 
   return bot;
