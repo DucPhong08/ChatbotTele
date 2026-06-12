@@ -1,7 +1,10 @@
 import { type Bot, type Context, InlineKeyboard } from "grammy";
 import { SubscriberModel } from "./subscriber.model";
 import { SentLogModel } from "./sent-log.model";
-import { formatArticlesBatch } from "../news/news.formatter";
+import {
+  formatSingleArticleForBroadcast,
+  buildSingleArticleKeyboard,
+} from "../news/news.formatter";
 import { AIService } from "../ai/ai.service";
 import { type NewsView } from "../types/news";
 import { type Subscriber } from "../types/subscriber";
@@ -11,7 +14,7 @@ import { type Subscriber } from "../types/subscriber";
  * 40ms tương đương khoảng 25 msg/s, nhưng thực tế vẫn nên giữ thấp hơn nếu bot nhiều user.
  */
 const BROADCAST_DELAY_MS = 40;
-const MAX_ARTICLES_PER_USER = 5;
+const MAX_ARTICLES_PER_USER = 10;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,17 +76,20 @@ export async function broadcastToSubscribers(
       }
 
       const lang = sub.language === "en" ? "en" : "vi";
-      const preferred = getPreferredCategories(sub);
 
-      const message = formatArticlesBatch(userArticles, botUsername, preferred, lang);
+      for (const article of userArticles) {
+        const message = formatSingleArticleForBroadcast(article, botUsername, lang);
+        const replyMarkup = buildSingleArticleKeyboard(article, lang);
 
-      const replyMarkup = buildBroadcastKeyboard(userArticles, lang);
+        await bot.api.sendMessage(sub.chatId, message, {
+          parse_mode: "HTML",
+          ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+          link_preview_options: { is_disabled: true },
+        });
 
-      await bot.api.sendMessage(sub.chatId, message, {
-        parse_mode: "HTML",
-        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-        link_preview_options: { is_disabled: true },
-      });
+        // Delay short time between messages to the same user to prevent spam block and maintain correct order
+        await sleep(250);
+      }
 
       await insertSentLogs(sub.chatId, userArticles);
 
@@ -151,22 +157,6 @@ function getPreferredCategories(sub: Subscriber): string[] {
   return ["all"];
 }
 
-function buildBroadcastKeyboard(
-  userArticles: NewsView[],
-  lang: "vi" | "en",
-): InlineKeyboard | undefined {
-  if (userArticles.length < MAX_ARTICLES_PER_USER) {
-    return undefined;
-  }
-
-  const keyboard = new InlineKeyboard();
-  const nextLabel = lang === "en" ? "▶️ Next" : "▶️ Sau";
-
-  keyboard.text(nextLabel, "news_page:2");
-
-  return keyboard;
-}
-
 async function insertSentLogs(chatId: number | string, articles: NewsView[]): Promise<void> {
   const logsToInsert = articles
     .filter((article) => Boolean(article._id))
@@ -224,36 +214,77 @@ async function filterArticlesForUser(
 ): Promise<NewsView[]> {
   const preferred = getPreferredCategories(sub);
 
-  let userArticles = topArticles;
+  if (preferred.includes("all")) {
+    return topArticles.slice(0, MAX_ARTICLES_PER_USER);
+  }
 
-  if (!preferred.includes("all")) {
-    const lowerPreferred = preferred.map((p) => p.toLowerCase());
+  const lowerPreferred = preferred.map((p) => p.toLowerCase());
+  const mergedArticles: NewsView[] = [];
+  const seenIds = new Set<string>();
+  const LIMIT_PER_CATEGORY = 10;
 
-    const filtered = allArticles.filter(
-      (article) => article.category && lowerPreferred.includes(article.category.toLowerCase()),
-    );
-
-    if (filtered.length === 0) {
-      return [];
-    }
-
-    userArticles = [...filtered]
+  for (const cat of lowerPreferred) {
+    const catArticles = allArticles
+      .filter((article) => article.category && article.category.toLowerCase() === cat)
       .sort((a, b) => {
         const scoreA = Number.isInteger(a.importanceScore) ? a.importanceScore! : 50;
         const scoreB = Number.isInteger(b.importanceScore) ? b.importanceScore! : 50;
-
         return scoreB - scoreA;
       })
-      .slice(0, MAX_ARTICLES_PER_USER);
+      .slice(0, LIMIT_PER_CATEGORY);
+
+    for (const art of catArticles) {
+      const artId = art._id?.toString();
+      if (artId && !seenIds.has(artId)) {
+        seenIds.add(artId);
+        mergedArticles.push(art);
+      }
+    }
   }
 
-  /**
-   * Cảnh báo:
-   * Chỗ này có thể tốn quota nếu nhiều user có customPrompt.
-   * MVP giữ được, nhưng sau nên cache theo customPrompt + articleIds.
-   */
-  if (sub.customPrompt && !preferred.includes("all")) {
-    return AIService.filterArticlesByPrompt(userArticles, sub.customPrompt);
+  // Nếu chưa đủ số lượng, bổ sung từ topArticles (đã đạt chuẩn điểm)
+  if (mergedArticles.length < MAX_ARTICLES_PER_USER) {
+    for (const art of topArticles) {
+      const artId = art._id?.toString();
+      if (artId && !seenIds.has(artId)) {
+        seenIds.add(artId);
+        mergedArticles.push(art);
+        if (mergedArticles.length >= MAX_ARTICLES_PER_USER) {
+          break;
+        }
+      }
+    }
+  }
+
+  if (mergedArticles.length === 0) {
+    return [];
+  }
+
+  // Sắp xếp bài viết: Ưu tiên thể loại yêu thích của user trước, sau đó là điểm importanceScore
+  let userArticles = mergedArticles.sort((a, b) => {
+    const aIsPreferred = a.category && lowerPreferred.includes(a.category.toLowerCase()) ? 1 : 0;
+    const bIsPreferred = b.category && lowerPreferred.includes(b.category.toLowerCase()) ? 1 : 0;
+    if (aIsPreferred !== bIsPreferred) {
+      return bIsPreferred - aIsPreferred; // Preferred đầu tiên
+    }
+
+    const scoreA = Number.isInteger(a.importanceScore) ? a.importanceScore! : 50;
+    const scoreB = Number.isInteger(b.importanceScore) ? b.importanceScore! : 50;
+    if (scoreA !== scoreB) {
+      return scoreB - scoreA;
+    }
+
+    const commentsA = Number.isInteger(a.commentCount) ? a.commentCount! : 0;
+    const commentsB = Number.isInteger(b.commentCount) ? b.commentCount! : 0;
+    if (commentsA !== commentsB) {
+      return commentsB - commentsA;
+    }
+
+    return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+  });
+
+  if (sub.customPrompt) {
+    userArticles = await AIService.filterArticlesByPrompt(userArticles, sub.customPrompt);
   }
 
   return userArticles;

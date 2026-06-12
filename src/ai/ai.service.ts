@@ -761,15 +761,15 @@ ${text}`;
       title: a.title || "",
       category: a.category || "other",
       tags: a.tags || [],
-      summary: a.summary || "",
+      summary: a.summary ? a.summary.slice(0, 80) : "",
     }));
 
     const systemPrompt = `You are a helpful assistant filtering tech articles based on user preferences.
 The user's preference prompt is: "${userPrompt}"
 Below is a list of candidate articles in JSON format.
-Your job is to return a JSON array containing the indices (0-based) of the articles that are relevant or interesting according to the user's prompt.
+Your job is to return a JSON array containing the indices (0-based) of the articles that are relevant or interesting according to the user's prompt, sorted from most relevant to least relevant.
 If no articles are relevant, return an empty array [].
-If all are relevant, return all indices.
+If all are relevant, return all indices, sorted by relevance.
 
 Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown code fences, comments, or extra text.`;
 
@@ -1922,9 +1922,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     const category = this.isCategory(raw.category) ? raw.category : baseline.category;
     const aiScore = this.readScore(raw.importanceScore);
     const importanceScore =
-      aiScore === null
-        ? baseline.importanceScore
-        : this.clampScore(aiScore, 1, baseline.importanceScore + 25);
+      aiScore === null ? baseline.importanceScore : this.clampScore(aiScore, 1, 100);
 
     // Parse Vietnamese summary
     const rawSummaryVi = raw.summaryVi ?? raw.summary;

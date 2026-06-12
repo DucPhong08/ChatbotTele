@@ -1,3 +1,4 @@
+import { InlineKeyboard } from "grammy";
 import { type NewsView } from "../types/news";
 
 type Language = "vi" | "en";
@@ -170,7 +171,7 @@ export function formatNewsList(
       : "Chưa có tin tức nào mới. Vui lòng quay lại sau!";
   }
 
-  const page = Math.floor((startIndex - 1) / 5) + 1;
+  const page = Math.floor((startIndex - 1) / 10) + 1;
   const categoryStr = getCategoryLabel(categories, language);
 
   const header = isEn
@@ -286,4 +287,62 @@ export function formatArticlesBatch(
     .join("\n\n");
 
   return trimTelegramMessage(header + body);
+}
+
+export function formatSingleArticleForBroadcast(
+  item: NewsView,
+  botUsername: string,
+  language: Language = "vi",
+): string {
+  const isEn = language === "en";
+  const title = getTitle(item, language);
+  const summary = getSummary(item, language);
+  const importanceReason = getImportanceReason(item, language);
+  const originalUrl = safeUrl(item.url);
+
+  const labels = isEn
+    ? {
+        source: "Source",
+        originalLink: "Original link",
+        whyRead: "Why read this",
+      }
+    : {
+        source: "Nguồn",
+        originalLink: "Link gốc",
+        whyRead: "Tại sao cần đọc",
+      };
+
+  const rating = typeof item.importanceScore === "number" ? item.importanceScore : 50;
+
+  const header = `📰 <b>${escapeHtml(title)}</b>\n`;
+  const ratingText = `⭐️ <b>${rating}/100</b>\n`;
+  const sourceText = escapeHtml(item.source || (isEn ? "Unknown" : "Không rõ"));
+  const sourceLine = originalUrl
+    ? `<i>${labels.source}: ${sourceText} | <a href="${originalUrl}">${labels.originalLink}</a></i>\n`
+    : `<i>${labels.source}: ${sourceText}</i>\n`;
+
+  const categoryLine = item.category ? `🏷️ ${formatHashtag(item.category)}\n` : "";
+
+  const reasonLine = importanceReason
+    ? `💡 <b>${labels.whyRead}:</b> <i>${escapeHtml(importanceReason)}</i>\n`
+    : "";
+
+  const summaryLine = summary ? `\n📝 ${escapeHtml(truncateText(summary, 350))}` : "";
+
+  return trimTelegramMessage(
+    header + ratingText + sourceLine + categoryLine + reasonLine + summaryLine,
+  );
+}
+
+export function buildSingleArticleKeyboard(
+  article: NewsView,
+  lang: Language = "vi",
+): InlineKeyboard | undefined {
+  const newsId = article._id?.toString();
+  if (!newsId) return undefined;
+
+  const keyboard = new InlineKeyboard();
+  keyboard.text(lang === "en" ? "🔍 Details" : "🔍 Chi tiết", `detail_${newsId}`);
+  keyboard.text(lang === "en" ? "🧠 AI Summary" : "🧠 Tóm tắt AI", `summarize_${newsId}`);
+  return keyboard;
 }

@@ -43,7 +43,7 @@ export function startDigestJob(bot: Bot<Context>, cronExpression = "0 * * * *"):
         return commentsB - commentsA;
       });
 
-      const topArticles = sortedArticles.slice(0, 5);
+      const topArticles = sortedArticles.slice(0, 10);
 
       // Lấy username của bot
       let botUsername = bot.botInfo?.username;

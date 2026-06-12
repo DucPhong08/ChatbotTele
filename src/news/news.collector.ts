@@ -119,6 +119,11 @@ export class NewsCollector {
 
       // Lọc sơ bộ bằng rule-based score để tránh quá tải AI
       const filteredItems = items.filter((item) => {
+        // Nếu nguồn tin là chính thống (official) hoặc kỹ thuật (engineering), luôn giữ lại để AI phân tích
+        if (feed.quality === "official" || feed.quality === "engineering") {
+          return true;
+        }
+
         const metadata = AIService.inferArticleMetadata(
           item.title,
           item.content,
@@ -263,11 +268,12 @@ export class NewsCollector {
 
     await FeedModel.bulkWrite(
       feeds.map((feed) => {
-        const updateSet: Partial<FeedDoc> = {
+        const updateSet: Partial<FeedDoc & { isActive: boolean }> = {
           source: feed.source,
           url: feed.url,
           category: feed.category,
           skills: feed.skills,
+          isActive: true,
         };
         if (feed.quality) updateSet.quality = feed.quality;
         if (typeof feed.minScore === "number") updateSet.minScore = feed.minScore;
@@ -276,7 +282,7 @@ export class NewsCollector {
         return {
           updateOne: {
             filter: { url: feed.url },
-            update: { $set: updateSet, $setOnInsert: { isActive: true } },
+            update: { $set: updateSet },
             upsert: true,
           },
         };
@@ -376,7 +382,7 @@ export class NewsCollector {
   }
 
   private getMinScore(feed: FeedDoc): number {
-    return env.notificationMinScore;
+    return typeof feed.minScore === "number" ? feed.minScore : env.notificationMinScore;
   }
 
   private async filterNewCandidates(candidates: CandidateArticle[]): Promise<CandidateArticle[]> {

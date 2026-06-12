@@ -23,66 +23,85 @@ export class NewsService {
   }
 
   async getLatest(limit = 10, skip = 0, categories?: string | string[]): Promise<NewsView[]> {
-    let matchFilter: Record<string, unknown> = {};
-    if (categories) {
-      const cats = Array.isArray(categories) ? categories : [categories];
-      if (cats.length > 0 && !cats.includes("all")) {
-        matchFilter = { category: { $in: cats } };
-      }
+    const cats = categories ? (Array.isArray(categories) ? categories : [categories]) : ["all"];
+    const isFiltered = cats.length > 0 && !cats.includes("all");
+
+    const fetchWithFilter = async (filter: Record<string, any>): Promise<NewsView[]> => {
+      const perSourceLimit = Math.max(5, Math.ceil((limit + skip) / 2));
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days window (1 week)
+
+      const pipeline: PipelineStage[] = [
+        {
+          $match: {
+            ...filter,
+            importanceScore: { $gte: env.notificationMinScore },
+            createdAt: { $gte: cutoff },
+          },
+        },
+        {
+          $sort: {
+            importanceScore: -1 as const,
+            commentCount: -1 as const,
+            publishedAt: -1 as const,
+          },
+        },
+        {
+          $group: {
+            _id: "$source",
+            articles: { $push: "$$ROOT" },
+          },
+        },
+        {
+          $project: {
+            articles: { $slice: ["$articles", perSourceLimit] },
+          },
+        },
+        { $unwind: "$articles" },
+        { $replaceRoot: { newRoot: "$articles" } },
+      ];
+
+      const diversified = await NewsModel.aggregate(pipeline).exec();
+
+      return diversified.sort((a: NewsView, b: NewsView) => {
+        const scoreA = Number.isInteger(a.importanceScore) ? (a.importanceScore as number) : 50;
+        const scoreB = Number.isInteger(b.importanceScore) ? (b.importanceScore as number) : 50;
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA;
+        }
+        const commentsA = Number.isInteger(a.commentCount) ? (a.commentCount as number) : 0;
+        const commentsB = Number.isInteger(b.commentCount) ? (b.commentCount as number) : 0;
+        if (commentsA !== commentsB) {
+          return commentsB - commentsA;
+        }
+        return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+      });
+    };
+
+    let preferred: NewsView[] = [];
+    if (isFiltered) {
+      preferred = await fetchWithFilter({ category: { $in: cats } });
+    } else {
+      preferred = await fetchWithFilter({});
     }
 
-    // Lấy N bài tốt nhất từ MỖI nguồn trong 7 ngày gần nhất (tính từ lúc lưu vào DB) để đa dạng hóa
-    const perSourceLimit = Math.max(5, Math.ceil((limit + skip) / 2));
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days window (1 week)
+    const targetLength = limit + skip;
+    if (isFiltered && preferred.length < targetLength) {
+      const allNews = await fetchWithFilter({});
+      const seenIds = new Set(preferred.map((p) => p._id?.toString()));
 
-    const pipeline: PipelineStage[] = [
-      {
-        $match: {
-          ...matchFilter,
-          importanceScore: { $gte: env.notificationMinScore },
-          createdAt: { $gte: cutoff },
-        },
-      },
-      {
-        $sort: {
-          importanceScore: -1 as const,
-          commentCount: -1 as const,
-          publishedAt: -1 as const,
-        },
-      },
-      {
-        $group: {
-          _id: "$source",
-          articles: { $push: "$$ROOT" },
-        },
-      },
-      {
-        $project: {
-          articles: { $slice: ["$articles", perSourceLimit] },
-        },
-      },
-      { $unwind: "$articles" },
-      { $replaceRoot: { newRoot: "$articles" } },
-    ];
-
-    const diversified = await NewsModel.aggregate(pipeline).exec();
-
-    // Sắp xếp tổng hợp: ưu tiên điểm cao, rồi mới nhất
-    const sorted = diversified.sort((a: NewsView, b: NewsView) => {
-      const scoreA = Number.isInteger(a.importanceScore) ? (a.importanceScore as number) : 50;
-      const scoreB = Number.isInteger(b.importanceScore) ? (b.importanceScore as number) : 50;
-      if (scoreA !== scoreB) {
-        return scoreB - scoreA;
+      const padding: NewsView[] = [];
+      for (const item of allNews) {
+        const itemId = item._id?.toString();
+        if (itemId && !seenIds.has(itemId)) {
+          padding.push(item);
+        }
       }
-      const commentsA = Number.isInteger(a.commentCount) ? (a.commentCount as number) : 0;
-      const commentsB = Number.isInteger(b.commentCount) ? (b.commentCount as number) : 0;
-      if (commentsA !== commentsB) {
-        return commentsB - commentsA;
-      }
-      return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
-    });
 
-    return sorted.slice(skip, skip + limit) as NewsView[];
+      const combined = [...preferred, ...padding];
+      return combined.slice(skip, skip + limit) as NewsView[];
+    }
+
+    return preferred.slice(skip, skip + limit) as NewsView[];
   }
 
   async getById(id: string): Promise<NewsView | null> {

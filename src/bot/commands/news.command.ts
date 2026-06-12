@@ -1,15 +1,18 @@
 import { type Bot, type Context, InlineKeyboard } from "grammy";
 import {
   formatNewsList,
-  escapeHtml,
   formatNewsDetail,
   hasVietnamese,
+  formatSingleArticleForBroadcast,
+  buildSingleArticleKeyboard,
+  escapeHtml,
 } from "../../news/news.formatter";
 import { NewsService } from "../../news/news.service";
 import { fetchArticleContent } from "../../news/article.fetcher";
 import { AIService } from "../../ai/ai.service";
 import { NewsModel } from "../../news/news.model";
 import { SubscriberModel } from "../subscriber.model";
+import { type NewsView } from "../../types/news";
 
 const summaryCache = new Map<
   string,
@@ -28,7 +31,7 @@ async function getSubscriberPrefs(
 ): Promise<{ categories: string[]; lang: "vi" | "en" }> {
   const defaults = { categories: ["all"] as string[], lang: "vi" as "vi" | "en" };
   if (!chatId) return defaults;
-  const sub = await SubscriberModel.findOne({ chatId }).lean();
+  const sub = await SubscriberModel.findOne({ chatId }).lean<any>().exec();
   if (!sub) return defaults;
   return {
     categories:
@@ -37,6 +40,17 @@ async function getSubscriberPrefs(
         : defaults.categories,
     lang: sub.language ?? defaults.lang,
   };
+}
+
+async function getNewsForUser(
+  newsService: NewsService,
+  limit: number,
+  skip: number,
+  categories: string[],
+): Promise<{ items: NewsView[]; hasMore: boolean }> {
+  const items = await newsService.getLatest(limit, skip, categories);
+  const nextBatch = await newsService.getLatest(1, skip + limit, categories);
+  return { items, hasMore: nextBatch.length > 0 };
 }
 
 function buildPaginationKeyboard(
@@ -89,7 +103,12 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
       const skip = (page - 1) * LIMIT;
 
       const { categories, lang } = await getSubscriberPrefs(ctx.chat?.id);
-      const latestNews = await newsService.getLatest(LIMIT, skip, categories);
+      const { items: latestNews, hasMore } = await getNewsForUser(
+        newsService,
+        LIMIT,
+        skip,
+        categories,
+      );
 
       if (latestNews.length === 0) {
         const isAll = categories.includes("all");
@@ -107,7 +126,7 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
 
       await ctx.reply(formatNewsList(latestNews, ctx.me.username, skip + 1, categories, lang), {
         parse_mode: "HTML",
-        reply_markup: buildPaginationKeyboard(page, latestNews.length === LIMIT, lang),
+        reply_markup: buildPaginationKeyboard(page, hasMore, lang),
       });
     } catch (error) {
       console.error("Lỗi khi xử lý lệnh /news:", error);
@@ -121,7 +140,12 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
     try {
       const { categories, lang } = await getSubscriberPrefs(ctx.chat?.id);
       const skip = (page - 1) * LIMIT;
-      const latestNews = await newsService.getLatest(LIMIT, skip, categories);
+      const { items: latestNews, hasMore } = await getNewsForUser(
+        newsService,
+        LIMIT,
+        skip,
+        categories,
+      );
       const isEn = lang === "en";
 
       if (latestNews.length === 0) {
@@ -142,7 +166,7 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         formatNewsList(latestNews, ctx.me.username, skip + 1, categories, lang),
         {
           parse_mode: "HTML",
-          reply_markup: buildPaginationKeyboard(page, latestNews.length === LIMIT, lang),
+          reply_markup: buildPaginationKeyboard(page, hasMore, lang),
         },
       );
       await ctx.answerCallbackQuery();
@@ -396,11 +420,16 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
   bot.callbackQuery("back_to_list", async (ctx) => {
     try {
       const { categories, lang } = await getSubscriberPrefs(ctx.chat?.id);
-      const latestNews = await newsService.getLatest(LIMIT, 0, categories);
+      const { items: latestNews, hasMore } = await getNewsForUser(
+        newsService,
+        LIMIT,
+        0,
+        categories,
+      );
 
       await ctx.editMessageText(formatNewsList(latestNews, ctx.me.username, 1, categories, lang), {
         parse_mode: "HTML",
-        reply_markup: buildPaginationKeyboard(1, latestNews.length === LIMIT, lang),
+        reply_markup: buildPaginationKeyboard(1, hasMore, lang),
       });
       await ctx.answerCallbackQuery();
     } catch (error) {

@@ -41,7 +41,7 @@ export function startCollectNewsJob(
           const commentsB = Number.isInteger(b.commentCount) ? b.commentCount! : 0;
           return commentsB - commentsA;
         });
-        const topNew = sortedNew.slice(0, 5);
+        const topNew = sortedNew.slice(0, 10);
 
         // Lấy thông tin username của bot nếu chưa có
         let botUsername = bot.botInfo?.username;
