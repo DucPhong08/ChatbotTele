@@ -15,6 +15,7 @@ const newsSchema = new Schema<News>(
     category: { type: String, trim: true },
     tags: { type: [String], default: [] },
     skills: { type: [String], default: [] },
+    commentCount: { type: Number, min: 0 },
     importanceScore: { type: Number, default: 50 },
     importanceReason: { type: String, trim: true },
     importanceReasonEn: { type: String, trim: true },
@@ -26,6 +27,7 @@ const newsSchema = new Schema<News>(
 
 newsSchema.index({ url: 1 }, { unique: true });
 newsSchema.index({ publishedAt: -1 });
+newsSchema.index({ importanceScore: -1, commentCount: -1, publishedAt: -1 });
 newsSchema.index({ source: 1 });
 newsSchema.index({ createdAt: 1 }, { expireAfterSeconds: 15 * 24 * 60 * 60 });
 

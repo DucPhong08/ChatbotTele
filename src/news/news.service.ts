@@ -2,6 +2,8 @@ import { isValidObjectId } from "mongoose";
 import { NewsModel } from "./news.model";
 import { type CreateNewsInput, type NewsView } from "../types/news";
 
+const MIN_READABLE_SCORE = 65;
+
 export class NewsService {
   async createManyIfNotExists(items: CreateNewsInput[]): Promise<number> {
     if (items.length === 0) {
@@ -35,8 +37,20 @@ export class NewsService {
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000); // 48h window
 
     const pipeline: any[] = [
-      { $match: { ...matchFilter, publishedAt: { $gte: cutoff } } },
-      { $sort: { importanceScore: -1 as const, publishedAt: -1 as const } },
+      {
+        $match: {
+          ...matchFilter,
+          importanceScore: { $gte: MIN_READABLE_SCORE },
+          publishedAt: { $gte: cutoff },
+        },
+      },
+      {
+        $sort: {
+          importanceScore: -1 as const,
+          commentCount: -1 as const,
+          publishedAt: -1 as const,
+        },
+      },
       {
         $group: {
           _id: "$source",
@@ -60,6 +74,11 @@ export class NewsService {
       const scoreB = Number.isInteger(b.importanceScore) ? (b.importanceScore as number) : 50;
       if (scoreA !== scoreB) {
         return scoreB - scoreA;
+      }
+      const commentsA = Number.isInteger(a.commentCount) ? (a.commentCount as number) : 0;
+      const commentsB = Number.isInteger(b.commentCount) ? (b.commentCount as number) : 0;
+      if (commentsA !== commentsB) {
+        return commentsB - commentsA;
       }
       return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
     });

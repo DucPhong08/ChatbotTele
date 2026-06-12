@@ -1,9 +1,6 @@
-import { type Bot, type Context, InlineKeyboard } from "grammy";
+import { type Bot, type Context } from "grammy";
 import { NewsCollector } from "../../news/news.collector";
-import { SubscriberModel } from "../subscriber.model";
-import { formatArticlesBatch } from "../../news/news.formatter";
 import { env } from "../../config/env";
-import { AIService } from "../../ai/ai.service";
 
 export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector): void {
   bot.command("sync", async (ctx) => {
@@ -18,13 +15,14 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
       return;
     }
 
-    await ctx.reply("Đang tiến hành thu thập tin tức mới bằng AI...");
+    console.log("[SyncCommand] Đang tiến hành thu thập tin tức mới bằng AI...");
 
     try {
       const newArticles = await collector.collect();
 
       if (newArticles.length === 0) {
-        await ctx.reply("Đã hoàn tất kiểm tra. Không có tin tức mới nào.");
+        console.log("[SyncCommand] Đã hoàn tất kiểm tra. Không có tin tức mới nào.");
+        await ctx.reply("Không có tin tức mới nào.");
         return;
       }
 
@@ -34,9 +32,10 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
       });
 
       if (notifyArticles.length === 0) {
-        await ctx.reply(
-          `Đã thu thập thêm ${newArticles.length} bài viết mới, nhưng chưa có bài nào đạt ngưỡng gửi ${env.notificationMinScore}/100.`,
+        console.log(
+          `[SyncCommand] Đã thu thập thêm ${newArticles.length} bài viết mới, nhưng chưa có bài nào đạt ngưỡng gửi ${env.notificationMinScore}/100.`,
         );
+        await ctx.reply("Không có bài viết mới nào đủ tiêu chuẩn gửi.");
         return;
       }
 
@@ -48,16 +47,16 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
       });
       const topNew = sortedNew.slice(0, 5);
 
-      await ctx.reply(
-        `Đã thu thập thêm ${newArticles.length} bài viết mới. Tiến hành gửi tin theo sở thích của từng người dùng...`,
+      console.log(
+        `[SyncCommand] Đã thu thập thêm ${newArticles.length} bài viết mới. Tiến hành gửi tin theo sở thích của từng người dùng...`,
       );
 
       // Phát tin tới các subscriber sử dụng broadcaster để tránh bị rate limit
       const { broadcastToSubscribers } = await import("../telegram.broadcaster");
       const result = await broadcastToSubscribers(bot, notifyArticles, topNew, ctx.me.username);
 
-      await ctx.reply(
-        `Đã hoàn tất gửi tin tức mới:\n- Gửi thành công: ${result.sent} người dùng\n- Bỏ qua (không trùng sở thích): ${result.skipped}\n- Lỗi/Bị chặn: ${result.failed + result.deactivated}`,
+      console.log(
+        `[SyncCommand] Đã hoàn tất gửi tin tức mới:\n- Gửi thành công: ${result.sent} người dùng\n- Bỏ qua (không trùng sở thích): ${result.skipped}\n- Lỗi/Bị chặn: ${result.failed + result.deactivated}`,
       );
     } catch (error) {
       console.error("Lỗi khi chạy lệnh /sync:", error);

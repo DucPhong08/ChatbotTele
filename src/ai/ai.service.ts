@@ -41,6 +41,17 @@ type KeywordRule = {
 
 type GoogleTranslateResponse = Array<Array<[string, ...unknown[]]>>;
 
+type ArticleProcessInput = {
+  title: string;
+  content: string;
+  source: string;
+  url: string;
+  publishedAt: Date;
+  commentCount?: number;
+};
+
+const AI_RETRY_DELAYS_MS = [500, 1500];
+
 const SOURCE_SCORES: Record<string, number> = {
   "OpenAI Blog": 18,
   "GitHub Blog": 16,
@@ -331,13 +342,17 @@ ${text}`;
 
     const prompt = `${promptSystem}\n\nArticle content:\n${truncated}`;
 
-    const primaryProvider = env.aiProvider;
-    const providersToTry: AiProvider[] = [primaryProvider];
-    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
-    for (const p of allProviders) {
-      if (p !== primaryProvider && this.isProviderConfigured(p)) {
-        providersToTry.push(p);
-      }
+    const providersToTry = this.getProvidersToTry();
+    if (providersToTry.length === 0) {
+      return {
+        title: "Không thể tải chi tiết bài viết.",
+        summaryPoints: ["AI chưa được cấu hình, bot đang dùng fallback an toàn."],
+        whyItMatters: "Không có thông tin đủ tin cậy để phân tích sâu.",
+        uncertainty: "Không có provider AI được cấu hình.",
+        actions: ["Đọc trực tiếp bài viết từ nguồn gốc."],
+        readabilityScore: 0,
+        topics: ["fallback"],
+      };
     }
     console.log("[Summarize] Providers to try:", providersToTry);
 
@@ -502,13 +517,9 @@ ${text}`;
     }
 
     const prompt = `User request: "${userPrompt}"`;
-    const primaryProvider = env.aiProvider;
-    const providersToTry: AiProvider[] = [primaryProvider];
-    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
-    for (const p of allProviders) {
-      if (p !== primaryProvider && this.isProviderConfigured(p)) {
-        providersToTry.push(p);
-      }
+    const providersToTry = this.getProvidersToTry();
+    if (providersToTry.length === 0) {
+      return this.parsePreferencesFallback(userPrompt);
     }
 
     const systemPrompt = PARSE_PREFERENCES_PROMPT;
@@ -699,13 +710,9 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
 
     const prompt = JSON.stringify(candidateList, null, 2);
 
-    const primaryProvider = env.aiProvider;
-    const providersToTry: AiProvider[] = [primaryProvider];
-    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
-    for (const p of allProviders) {
-      if (p !== primaryProvider && this.isProviderConfigured(p)) {
-        providersToTry.push(p);
-      }
+    const providersToTry = this.getProvidersToTry();
+    if (providersToTry.length === 0) {
+      return articles;
     }
 
     for (const provider of providersToTry) {
@@ -818,6 +825,151 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
     }
   }
 
+  private static getProvidersToTry(): AiProvider[] {
+    const ordered: AiProvider[] = [env.aiProvider, "gemini", "openai", "groq", "openrouter"];
+    const seen = new Set<AiProvider>();
+
+    return ordered.filter((provider) => {
+      if (seen.has(provider) || !this.isProviderConfigured(provider)) return false;
+      seen.add(provider);
+      return true;
+    });
+  }
+
+  private static async withAiRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= AI_RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        const delay = AI_RETRY_DELAYS_MS[attempt];
+
+        if (delay === undefined || !this.isRetryableAiError(error)) {
+          throw error;
+        }
+
+        console.warn(
+          "[AI Retry] " +
+            label +
+            " thất bại lần " +
+            (attempt + 1) +
+            ", thử lại sau " +
+            delay +
+            "ms: " +
+            (error as Error).message,
+        );
+        await this.sleep(delay);
+      }
+    }
+
+    throw lastError;
+  }
+
+  private static isRetryableAiError(error: unknown): boolean {
+    const err = error as { name?: string; message?: string };
+    const message = (err.message || "").toLowerCase();
+
+    return (
+      err.name === "AbortError" ||
+      message.includes("aborted") ||
+      message.includes("timeout") ||
+      message.includes("status 408") ||
+      message.includes("status 409") ||
+      message.includes("status 429") ||
+      /status 5\d\d/.test(message)
+    );
+  }
+
+  private static sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private static async processWithProvider(
+    provider: AiProvider,
+    title: string,
+    content: string,
+    source: string,
+    url: string,
+    publishedAt: Date,
+  ): Promise<AIProcessedResult> {
+    switch (provider) {
+      case "openai":
+        return this.processWithOpenAI(title, content, source, url, publishedAt);
+      case "groq":
+        return this.processWithGroq(title, content, source, url, publishedAt);
+      case "openrouter":
+        return this.processWithOpenRouter(title, content, source, url, publishedAt);
+      case "gemini":
+      default:
+        return this.processWithGemini(title, content, source, url, publishedAt);
+    }
+  }
+
+  private static async callBatchProvider(
+    provider: AiProvider,
+    batchPrompt: string,
+  ): Promise<unknown> {
+    switch (provider) {
+      case "openai":
+        return this.callChatCompletion(
+          "https://api.openai.com/v1/chat/completions",
+          env.openaiApiKey,
+          env.openaiModel,
+          batchPrompt,
+        );
+      case "groq":
+        return this.callChatCompletion(
+          "https://api.groq.com/openai/v1/chat/completions",
+          env.groqApiKey,
+          env.groqModel,
+          batchPrompt,
+        );
+      case "openrouter":
+        try {
+          return await this.callChatCompletion(
+            "https://openrouter.ai/api/v1/chat/completions",
+            env.openrouterApiKey,
+            env.openrouterModel,
+            batchPrompt,
+            TECH_NEWS_PROMPT,
+            {
+              "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+              "X-Title": "Chatbot News Telegram",
+            },
+          );
+        } catch (error) {
+          if (env.openrouterFallbackModel && env.openrouterFallbackModel !== env.openrouterModel) {
+            console.warn(
+              "[AI Batch OpenRouter] Thất bại với model " +
+                env.openrouterModel +
+                ". Đang thử fallback model: " +
+                env.openrouterFallbackModel +
+                ". Lỗi: " +
+                (error as Error).message,
+            );
+            return this.callChatCompletion(
+              "https://openrouter.ai/api/v1/chat/completions",
+              env.openrouterApiKey,
+              env.openrouterFallbackModel,
+              batchPrompt,
+              TECH_NEWS_PROMPT,
+              {
+                "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+                "X-Title": "Chatbot News Telegram",
+              },
+            );
+          }
+
+          throw error;
+        }
+      case "gemini":
+      default:
+        return this.callGeminiBatch(batchPrompt);
+    }
+  }
+
   static async processArticle(
     title: string,
     content: string,
@@ -825,38 +977,23 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
     url: string,
     publishedAt = new Date(),
   ): Promise<AIProcessedResult> {
-    const primaryProvider = env.aiProvider;
-    const providersToTry: AiProvider[] = [primaryProvider];
+    const providersToTry = this.getProvidersToTry();
 
-    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
-    for (const p of allProviders) {
-      if (p !== primaryProvider && this.isProviderConfigured(p)) {
-        providersToTry.push(p);
-      }
+    if (providersToTry.length === 0) {
+      console.warn("[AI Failover] Chưa cấu hình provider AI. Sử dụng rule-based fallback.");
+      return this.getFallback(title, content, source, publishedAt);
     }
 
-    console.log(`[AI Failover] Thứ tự thử nghiệm các AI: ${providersToTry.join(" -> ")}`);
+    console.log("[AI Failover] Thứ tự thử nghiệm các AI: " + providersToTry.join(" -> "));
 
     for (const provider of providersToTry) {
       try {
-        console.log(`[AI] Đang xử lý bài viết "${title.slice(0, 45)}..." bằng: ${provider}`);
-        let result: AIProcessedResult;
-        switch (provider) {
-          case "openai":
-            result = await this.processWithOpenAI(title, content, source, url, publishedAt);
-            break;
-          case "groq":
-            result = await this.processWithGroq(title, content, source, url, publishedAt);
-            break;
-          case "openrouter":
-            result = await this.processWithOpenRouter(title, content, source, url, publishedAt);
-            break;
-          case "gemini":
-          default:
-            result = await this.processWithGemini(title, content, source, url, publishedAt);
-            break;
-        }
-        console.log(`[AI Failover] Xử lý thành công bằng: ${provider}`);
+        console.log('[AI] Đang xử lý bài viết "' + title.slice(0, 45) + '..." bằng: ' + provider);
+        const result = await this.withAiRetry(provider, () =>
+          this.processWithProvider(provider, title, content, source, url, publishedAt),
+        );
+
+        console.log("[AI Failover] Xử lý thành công bằng: " + provider);
         return {
           ...result,
           titleVi: this.normalizeDevTerms(result.titleVi),
@@ -867,7 +1004,9 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
           importanceReasonEn: this.normalizeDevTerms(result.importanceReasonEn),
         };
       } catch (error) {
-        console.warn(`[AI Failover] Thất bại với ${provider}. Lỗi: ${(error as Error).message}`);
+        console.warn(
+          "[AI Failover] Thất bại với " + provider + ". Lỗi: " + (error as Error).message,
+        );
       }
     }
 
@@ -882,104 +1021,38 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
    * Tiết kiệm API quota bằng cách gộp tối đa 5 bài/prompt.
    * Nếu batch thất bại, sẽ fallback về xử lý từng bài riêng lẻ.
    */
-  static async processArticleBatch(
-    articles: Array<{
-      title: string;
-      content: string;
-      source: string;
-      url: string;
-      publishedAt: Date;
-    }>,
-  ): Promise<AIProcessedResult[]> {
+  static async processArticleBatch(articles: ArticleProcessInput[]): Promise<AIProcessedResult[]> {
     if (articles.length === 0) return [];
-    if (articles.length === 1) {
-      const a = articles[0];
-      return [await this.processArticle(a.title, a.content, a.source, a.url, a.publishedAt)];
-    }
 
     const batchPrompt = this.buildBatchPrompt(articles);
+    const providersToTry = this.getProvidersToTry();
 
-    const primaryProvider = env.aiProvider;
-    const providersToTry: AiProvider[] = [primaryProvider];
-    const allProviders: AiProvider[] = ["gemini", "openai", "groq", "openrouter"];
-    for (const p of allProviders) {
-      if (p !== primaryProvider && this.isProviderConfigured(p)) {
-        providersToTry.push(p);
-      }
+    if (providersToTry.length === 0) {
+      console.warn("[AI Batch] Chưa cấu hình provider AI. Sử dụng rule-based fallback.");
+      return Promise.all(
+        articles.map((article) =>
+          this.getFallback(article.title, article.content, article.source, article.publishedAt),
+        ),
+      );
     }
 
     console.log(
-      `[AI Batch] Xử lý ${articles.length} bài cùng lúc. Thứ tự: ${providersToTry.join(" -> ")}`,
+      "[AI Batch] Xử lý " +
+        articles.length +
+        " bài cùng lúc. Thứ tự: " +
+        providersToTry.join(" -> "),
     );
 
     for (const provider of providersToTry) {
       try {
-        console.log(`[AI Batch] Đang gửi batch ${articles.length} bài tới: ${provider}`);
-        let rawResult: unknown;
-
-        switch (provider) {
-          case "openai":
-            rawResult = await this.callChatCompletion(
-              "https://api.openai.com/v1/chat/completions",
-              env.openaiApiKey,
-              env.openaiModel,
-              batchPrompt,
-            );
-            break;
-          case "groq":
-            rawResult = await this.callChatCompletion(
-              "https://api.groq.com/openai/v1/chat/completions",
-              env.groqApiKey,
-              env.groqModel,
-              batchPrompt,
-            );
-            break;
-          case "openrouter":
-            try {
-              rawResult = await this.callChatCompletion(
-                "https://openrouter.ai/api/v1/chat/completions",
-                env.openrouterApiKey,
-                env.openrouterModel,
-                batchPrompt,
-                TECH_NEWS_PROMPT,
-                {
-                  "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
-                  "X-Title": "Chatbot News Telegram",
-                },
-              );
-            } catch (error) {
-              if (
-                env.openrouterFallbackModel &&
-                env.openrouterFallbackModel !== env.openrouterModel
-              ) {
-                console.warn(
-                  `[AI Batch OpenRouter] Thất bại với model ${env.openrouterModel}. Đang thử fallback model: ${env.openrouterFallbackModel}. Lỗi: ${(error as Error).message}`,
-                );
-                rawResult = await this.callChatCompletion(
-                  "https://openrouter.ai/api/v1/chat/completions",
-                  env.openrouterApiKey,
-                  env.openrouterFallbackModel,
-                  batchPrompt,
-                  TECH_NEWS_PROMPT,
-                  {
-                    "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
-                    "X-Title": "Chatbot News Telegram",
-                  },
-                );
-              } else {
-                throw error;
-              }
-            }
-            break;
-          case "gemini":
-          default:
-            rawResult = await this.callGeminiBatch(batchPrompt);
-            break;
-        }
+        console.log("[AI Batch] Đang gửi batch " + articles.length + " bài tới: " + provider);
+        const rawResult = await this.withAiRetry(provider + " batch", () =>
+          this.callBatchProvider(provider, batchPrompt),
+        );
 
         const parsed = await this.parseBatchResult(rawResult, articles);
         if (parsed) {
-          console.log(`[AI Batch] Batch xử lý thành công bằng: ${provider}.`);
+          console.log("[AI Batch] Batch xử lý thành công bằng: " + provider + ".");
           return parsed.map((result) => ({
             ...result,
             titleVi: this.normalizeDevTerms(result.titleVi),
@@ -991,28 +1064,26 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
           }));
         }
       } catch (error) {
-        console.warn(`[AI Batch] Thất bại với ${provider}. Lỗi: ${(error as Error).message}`);
+        console.warn("[AI Batch] Thất bại với " + provider + ". Lỗi: " + (error as Error).message);
       }
     }
 
-    // Fallback: xử lý từng bài riêng lẻ
-    console.warn("[AI Batch] Batch thất bại. Chuyển sang xử lý từng bài riêng lẻ.");
-    const results: AIProcessedResult[] = [];
-    for (const a of articles) {
-      results.push(await this.processArticle(a.title, a.content, a.source, a.url, a.publishedAt));
-    }
-    return results;
+    console.warn("[AI Batch] Batch thất bại. Sử dụng fallback cho toàn bộ batch.");
+    return Promise.all(
+      articles.map((article) =>
+        this.getFallback(article.title, article.content, article.source, article.publishedAt),
+      ),
+    );
   }
 
-  private static buildBatchPrompt(
-    articles: Array<{ title: string; content: string; source: string; url: string }>,
-  ): string {
+  private static buildBatchPrompt(articles: ArticleProcessInput[]): string {
     const articlesJson = articles.map((a, i) => ({
       index: i,
       title: a.title,
       content: this.truncate(this.cleanContent(a.content), 500),
       source: a.source,
       url: a.url,
+      commentCount: a.commentCount,
     }));
 
     return `${TECH_NEWS_PROMPT}
@@ -1101,24 +1172,50 @@ ${JSON.stringify(articlesJson, null, 2)}`;
 
   private static async parseBatchResult(
     raw: unknown,
-    articles: Array<{ title: string; content: string; source: string; publishedAt: Date }>,
+    articles: ArticleProcessInput[],
   ): Promise<AIProcessedResult[] | null> {
     if (!this.isRecord(raw)) return null;
-    const arr = Array.isArray(raw.articles) ? raw.articles : null;
-    if (!arr || arr.length !== articles.length) return null;
+    const arr = Array.isArray(raw.articles) ? raw.articles : Array.isArray(raw) ? raw : null;
+    if (!arr) return null;
 
     const results: AIProcessedResult[] = [];
-    for (let i = 0; i < arr.length; i++) {
-      results.push(
-        await this.validateAndNormalizeResult(
-          arr[i],
-          articles[i].title,
-          articles[i].content,
-          articles[i].source,
-          articles[i].publishedAt,
-        ),
-      );
+    for (let i = 0; i < articles.length; i++) {
+      const article = articles[i];
+
+      try {
+        if (arr[i] === undefined) {
+          throw new Error("AI batch result missing item " + i);
+        }
+
+        results.push(
+          await this.validateAndNormalizeResult(
+            arr[i],
+            article.title,
+            article.content,
+            article.source,
+            article.publishedAt,
+          ),
+        );
+      } catch (error) {
+        console.warn(
+          "[AI Batch] Fallback item " +
+            i +
+            ' "' +
+            article.title.slice(0, 60) +
+            '" vì kết quả AI không hợp lệ: ' +
+            (error as Error).message,
+        );
+        results.push(
+          await this.getFallback(
+            article.title,
+            article.content,
+            article.source,
+            article.publishedAt,
+          ),
+        );
+      }
     }
+
     return results;
   }
 
@@ -1439,7 +1536,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     const importanceScore =
       aiScore === null
         ? baseline.importanceScore
-        : this.clampScore(aiScore, baseline.importanceScore - 25, baseline.importanceScore + 25);
+        : this.clampScore(aiScore, 1, baseline.importanceScore + 25);
 
     // Parse Vietnamese summary
     const rawSummaryVi = raw.summaryVi ?? raw.summary;

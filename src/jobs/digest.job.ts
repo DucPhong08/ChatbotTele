@@ -3,6 +3,7 @@ import { type Bot, type Context } from "grammy";
 import { NewsModel } from "../news/news.model";
 import { broadcastToSubscribers } from "../bot/telegram.broadcaster";
 import { type NewsView } from "../types/news";
+import { env } from "../config/env";
 
 export function startDigestJob(bot: Bot<Context>, cronExpression = "0 * * * *"): ScheduledTask {
   const sendDigest = async (): Promise<void> => {
@@ -18,7 +19,10 @@ export function startDigestJob(bot: Bot<Context>, cronExpression = "0 * * * *"):
 
       // 2. Lấy danh sách tin tức trong 24 giờ qua đạt tiêu chuẩn điểm quan trọng
       const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const latestArticles = await NewsModel.find({ publishedAt: { $gte: cutoff } })
+      const latestArticles = await NewsModel.find({
+        importanceScore: { $gte: env.notificationMinScore },
+        publishedAt: { $gte: cutoff },
+      })
         .lean<NewsView[]>()
         .exec();
 
@@ -33,7 +37,10 @@ export function startDigestJob(bot: Bot<Context>, cronExpression = "0 * * * *"):
       const sortedArticles = [...latestArticles].sort((a, b) => {
         const scoreA = Number.isInteger(a.importanceScore) ? a.importanceScore! : 50;
         const scoreB = Number.isInteger(b.importanceScore) ? b.importanceScore! : 50;
-        return scoreB - scoreA;
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        const commentsA = Number.isInteger(a.commentCount) ? a.commentCount! : 0;
+        const commentsB = Number.isInteger(b.commentCount) ? b.commentCount! : 0;
+        return commentsB - commentsA;
       });
 
       const topArticles = sortedArticles.slice(0, 5);

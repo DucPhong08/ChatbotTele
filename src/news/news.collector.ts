@@ -1,6 +1,7 @@
 import Parser from "rss-parser";
 import { NewsService } from "./news.service";
 import { type CreateNewsInput, type NewsView } from "../types/news";
+import { type FeedQuality } from "../types/feed";
 import { NewsModel } from "./news.model";
 import { AIService } from "../ai/ai.service";
 import { env } from "../config/env";
@@ -8,18 +9,19 @@ import { feeds as devFeeds } from "./feed/feeds-dev.config";
 import { feeds as mxhFeeds } from "./feed/feeds-mxh.config";
 import { FeedModel } from "./feed.model";
 import { scrapeArticleContent } from "../utils/scraper";
-import { exec } from "child_process";
-import { promisify } from "util";
 
-const execAsync = promisify(exec);
+const FETCH_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-async function fetchRssViaCurl(url: string): Promise<string> {
-  const userAgent =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-  const { stdout } = await execAsync(`curl -sL -H "User-Agent: ${userAgent}" "${url}"`, {
-    maxBuffer: 10 * 1024 * 1024,
+async function fetchUrl(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: { "User-Agent": FETCH_USER_AGENT },
+    signal: AbortSignal.timeout(15_000),
   });
-  return stdout;
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} khi tải ${url}`);
+  }
+  return response.text();
 }
 
 const feeds = env.feedSource === "mxh" ? mxhFeeds : devFeeds;
@@ -34,6 +36,24 @@ type RssItem = {
   contentSnippet?: string;
   content?: string;
   categories?: string[];
+  comments?: string;
+  "slash:comments"?: string | number;
+  "content:encoded"?: string;
+};
+
+type RedditListing = {
+  data?: {
+    children?: Array<{
+      data?: {
+        title?: string;
+        url?: string;
+        permalink?: string;
+        selftext?: string;
+        created_utc?: number;
+        num_comments?: number;
+      };
+    }>;
+  };
 };
 
 type CandidateArticle = {
@@ -41,6 +61,7 @@ type CandidateArticle = {
   url: string;
   content: string;
   publishedAt: Date;
+  commentCount: number | undefined;
 };
 
 type FeedDoc = {
@@ -48,12 +69,20 @@ type FeedDoc = {
   source: string;
   category: string;
   skills: string[];
+  quality?: FeedQuality;
+  minScore?: number;
+  minComments?: number;
 };
 
 const LOG = "[NewsCollector]";
 const FEED_FETCH_COOLDOWN_MS = 3 * 60 * 1000;
 const AI_BATCH_SIZE = 5;
 const SCRAPE_CONCURRENCY = 3;
+const ENGINEERING_MIN_IMPORTANCE_SCORE = 70;
+const LOW_SIGNAL_MIN_IMPORTANCE_SCORE = 75;
+const DISCUSSION_MIN_IMPORTANCE_SCORE = 60;
+const HIGH_CONFIDENCE_SCORE = 80;
+const MIN_DISCUSSION_COMMENTS = 20;
 
 export class NewsCollector {
   private readonly parser = new Parser<RssFeed, RssItem>({
@@ -75,34 +104,40 @@ export class NewsCollector {
     console.log(`${LOG} Bắt đầu quét tin từ ${activeFeeds.length} nguồn đang hoạt động.`);
 
     const seenUrls = new Set<string>();
+
+    // Bước 1: Tải RSS/JSON song song từ tất cả các nguồn
+    const fetchResults = await Promise.allSettled(
+      activeFeeds.map(async (feed) => ({
+        feed,
+        items: await this.fetchFeedItems(feed, seenUrls),
+      })),
+    );
+
+    // Bước 2: Xử lý AI tuần tự (tránh rate limit)
     const collectedItems: CreateNewsInput[] = [];
-
-    for (const feed of activeFeeds) {
+    for (const result of fetchResults) {
+      if (result.status === "rejected") {
+        console.error(`${LOG} Thất bại khi tải feed:`, result.reason);
+        continue;
+      }
+      const { feed, items } = result.value;
+      if (items.length === 0) continue;
       try {
-        const items = await this.fetchFeedItems(feed, seenUrls);
-        if (items.length === 0) continue;
-
-        const processed = await this.processFeedItems(items, feed);
-        collectedItems.push(...processed);
+        collectedItems.push(...(await this.processFeedItems(items, feed)));
       } catch (error) {
-        console.error(`${LOG} Thất bại khi thu thập dữ liệu RSS feed từ: ${feed.source}`, error);
+        console.error(`${LOG} Thất bại khi xử lý AI cho feed: ${feed.source}`, error);
       }
     }
 
     if (collectedItems.length === 0) return [];
 
     await this.newsService.createManyIfNotExists(collectedItems);
-
     const urls = collectedItems.map((item) => item.url);
     return NewsModel.find({ url: { $in: urls } })
       .lean<NewsView[]>()
       .exec();
   }
 
-  /**
-   * Fetch và lọc các bài mới từ một feed, trả về candidates chưa có trong DB.
-   * Trả về mảng rỗng nếu feed bị skip hoặc không có bài mới.
-   */
   private async fetchFeedItems(feed: FeedDoc, seenUrls: Set<string>): Promise<CandidateArticle[]> {
     if (this.shouldSkipFeed(feed.url, feed.source)) return [];
 
@@ -115,22 +150,19 @@ export class NewsCollector {
       ) {
         targetUrl = targetUrl.replace(/\/\.rss$/, "").replace(/\/$/, "") + "/hot/.rss";
       }
+
+      const candidates = await this.fetchRedditCandidates(targetUrl, seenUrls);
+      this.lastFetchTimes.set(feed.url, Date.now());
+      return this.filterNewCandidates(candidates);
     }
 
-    const parsedFeed = targetUrl.includes("reddit.com")
-      ? await this.parser.parseString(await fetchRssViaCurl(targetUrl))
-      : await this.parser.parseURL(targetUrl);
+    const parsedFeed = await this.parser.parseURL(targetUrl);
     this.lastFetchTimes.set(feed.url, Date.now());
 
     const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
-    if (candidates.length === 0) return [];
-
-    return this.filterNewCandidates(candidates);
+    return candidates.length === 0 ? [] : this.filterNewCandidates(candidates);
   }
 
-  /**
-   * Scrape + AI-process toàn bộ candidates của một feed theo batch.
-   */
   private async processFeedItems(
     candidates: CandidateArticle[],
     feed: FeedDoc,
@@ -138,12 +170,9 @@ export class NewsCollector {
     const results: CreateNewsInput[] = [];
 
     for (let i = 0; i < candidates.length; i += AI_BATCH_SIZE) {
-      const batch = candidates.slice(i, i + AI_BATCH_SIZE);
-
       try {
-        const scrapedBatch = await this.scrapeBatch(batch);
-        const batchResults = await this.processAiBatch(scrapedBatch, feed);
-        results.push(...batchResults);
+        const scrapedBatch = await this.scrapeBatch(candidates.slice(i, i + AI_BATCH_SIZE));
+        results.push(...(await this.processAiBatch(scrapedBatch, feed)));
       } catch (error) {
         console.error(`${LOG} Lỗi khi xử lý batch của feed ${feed.source}:`, error);
       }
@@ -152,9 +181,6 @@ export class NewsCollector {
     return results;
   }
 
-  /**
-   * Scrape nội dung đầy đủ cho từng bài trong batch, chạy song song với SCRAPE_CONCURRENCY.
-   */
   private async scrapeBatch(batch: CandidateArticle[]): Promise<CandidateArticle[]> {
     return this.processPool(
       batch,
@@ -167,33 +193,24 @@ export class NewsCollector {
     );
   }
 
-  /**
-   * Gửi batch cho AI và map kết quả về CreateNewsInput.
-   */
   private async processAiBatch(
     scrapedBatch: CandidateArticle[],
     feed: FeedDoc,
   ): Promise<CreateNewsInput[]> {
-    const batchInput = scrapedBatch.map((item) => ({
-      title: item.title,
-      content: item.content,
-      source: feed.source,
-      url: item.url,
-      publishedAt: item.publishedAt,
-    }));
+    const aiResults = await AIService.processArticleBatch(
+      scrapedBatch.map((item) => ({
+        title: item.title,
+        content: item.content,
+        source: feed.source,
+        url: item.url,
+        publishedAt: item.publishedAt,
+        commentCount: item.commentCount,
+      })),
+    );
 
-    const aiResults = await AIService.processArticleBatch(batchInput);
-    const collected: CreateNewsInput[] = [];
-
-    for (let j = 0; j < scrapedBatch.length; j++) {
-      const item = scrapedBatch[j];
-      const aiResult = aiResults[j];
-      if (!aiResult) continue;
-
-      collected.push(this.buildNewsInput(item, aiResult, feed));
-    }
-
-    return collected;
+    return scrapedBatch
+      .map((item, j) => aiResults[j] && this.buildNewsInput(item, aiResults[j], feed))
+      .filter((item): item is CreateNewsInput => !!item && this.shouldKeepArticle(item, feed));
   }
 
   private buildNewsInput(
@@ -201,9 +218,6 @@ export class NewsCollector {
     aiResult: Awaited<ReturnType<typeof AIService.processArticleBatch>>[number],
     feed: FeedDoc,
   ): CreateNewsInput {
-    const skills =
-      Array.isArray(aiResult.skills) && aiResult.skills.length > 0 ? aiResult.skills : feed.skills;
-
     return {
       title: aiResult.titleVi || item.title,
       titleEn: aiResult.titleEn || item.title,
@@ -214,7 +228,11 @@ export class NewsCollector {
       summaryEn: aiResult.summaryEn || "",
       category: aiResult.category || feed.category,
       tags: Array.isArray(aiResult.tags) ? aiResult.tags : [],
-      skills,
+      skills:
+        Array.isArray(aiResult.skills) && aiResult.skills.length > 0
+          ? aiResult.skills
+          : feed.skills,
+      commentCount: item.commentCount,
       importanceScore: typeof aiResult.importanceScore === "number" ? aiResult.importanceScore : 50,
       importanceReason: aiResult.importanceReasonVi || "",
       importanceReasonEn: aiResult.importanceReasonEn || "",
@@ -225,27 +243,29 @@ export class NewsCollector {
     console.log(`${LOG} Đồng bộ hóa ${feeds.length} nguồn tin từ cấu hình tĩnh vào CSDL.`);
 
     await FeedModel.bulkWrite(
-      feeds.map((feed) => ({
-        updateOne: {
-          filter: { url: feed.url },
-          update: {
-            $setOnInsert: {
-              source: feed.source,
-              url: feed.url,
-              category: feed.category,
-              skills: feed.skills,
-              isActive: true,
-            },
+      feeds.map((feed) => {
+        const updateSet: Partial<FeedDoc> = {
+          source: feed.source,
+          url: feed.url,
+          category: feed.category,
+          skills: feed.skills,
+        };
+        if (feed.quality) updateSet.quality = feed.quality;
+        if (typeof feed.minScore === "number") updateSet.minScore = feed.minScore;
+        if (typeof feed.minComments === "number") updateSet.minComments = feed.minComments;
+
+        return {
+          updateOne: {
+            filter: { url: feed.url },
+            update: { $set: updateSet, $setOnInsert: { isActive: true } },
+            upsert: true,
           },
-          upsert: true,
-        },
-      })),
+        };
+      }),
     );
 
-    // Tắt các feed không còn nằm trong file cấu hình tĩnh
-    const activeUrls = feeds.map((feed) => feed.url);
     await FeedModel.updateMany(
-      { url: { $nin: activeUrls }, isActive: true },
+      { url: { $nin: feeds.map((f) => f.url) }, isActive: true },
       { $set: { isActive: false } },
     );
   }
@@ -271,9 +291,100 @@ export class NewsCollector {
           url,
           content: item.contentSnippet?.trim() || item.content?.trim() || "",
           publishedAt: this.parseDate(item.isoDate || item.pubDate),
+          commentCount: this.extractCommentCount(item),
         };
       })
       .filter((item): item is CandidateArticle => item !== null);
+  }
+
+  private async fetchRedditCandidates(
+    targetUrl: string,
+    seenUrls: Set<string>,
+  ): Promise<CandidateArticle[]> {
+    let listing: RedditListing;
+    try {
+      const raw = await fetchUrl(this.toRedditJsonUrl(targetUrl));
+      listing = JSON.parse(raw) as RedditListing;
+    } catch (error) {
+      console.error(`${LOG} Lỗi khi tải/parse JSON từ Reddit (${targetUrl}):`, error);
+      return [];
+    }
+
+    return (listing.data?.children ?? [])
+      .map((child) => {
+        const post = child.data;
+        const title = post?.title?.trim();
+        const url =
+          this.normalizeUrl(post?.url) ||
+          this.normalizeUrl(post?.permalink ? "https://www.reddit.com" + post.permalink : "");
+
+        if (!title || !url || seenUrls.has(url)) return null;
+        seenUrls.add(url);
+        return {
+          title,
+          url,
+          content: post?.selftext?.trim() || "",
+          publishedAt: this.parseUnixDate(post?.created_utc),
+          commentCount: this.normalizeCount(post?.num_comments),
+        };
+      })
+      .filter((item): item is CandidateArticle => item !== null);
+  }
+
+  private toRedditJsonUrl(targetUrl: string): string {
+    return targetUrl.replace(/\/\.rss$/, ".json").replace(/\.rss$/, ".json");
+  }
+
+  private extractCommentCount(item: RssItem): number | undefined {
+    const directCount = this.normalizeCount(item["slash:comments"]);
+    if (directCount !== undefined) return directCount;
+
+    const text = [item.contentSnippet, item.content, item["content:encoded"], item.comments]
+      .filter((v): v is string => typeof v === "string")
+      .join(" ");
+
+    const match = text.match(/#?\s*comments?:\s*(\d+)/i) || text.match(/(\d+)\s+comments?/i);
+    return this.normalizeCount(match?.[1]);
+  }
+
+  private shouldKeepArticle(item: CreateNewsInput, feed: FeedDoc): boolean {
+    const score = Number.isInteger(item.importanceScore) ? item.importanceScore! : 0;
+    const minScore = this.getMinScore(feed);
+
+    if (score < minScore) {
+      console.log(
+        `${LOG} Loại bài "${item.title}" (score=${score}, min=${minScore}) - không đủ mức đáng đọc.`,
+      );
+      return false;
+    }
+
+    const minComments = this.getMinComments(feed);
+    if (
+      minComments !== undefined &&
+      typeof item.commentCount === "number" &&
+      item.commentCount < minComments &&
+      score < HIGH_CONFIDENCE_SCORE
+    ) {
+      console.log(
+        `${LOG} Loại bài "${item.title}" (score=${score}, comments=${item.commentCount}, minComments=${minComments}) - thảo luận còn ít.`,
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  private getMinScore(feed: FeedDoc): number {
+    if (typeof feed.minScore === "number") return feed.minScore;
+    if (feed.quality === "engineering") return ENGINEERING_MIN_IMPORTANCE_SCORE;
+    if (feed.quality === "discussion") return DISCUSSION_MIN_IMPORTANCE_SCORE;
+    if (feed.quality === "low-signal") return LOW_SIGNAL_MIN_IMPORTANCE_SCORE;
+    return env.notificationMinScore;
+  }
+
+  private getMinComments(feed: FeedDoc): number | undefined {
+    if (typeof feed.minComments === "number") return feed.minComments;
+    return feed.quality === "discussion" ? MIN_DISCUSSION_COMMENTS : undefined;
   }
 
   private async filterNewCandidates(candidates: CandidateArticle[]): Promise<CandidateArticle[]> {
@@ -298,10 +409,6 @@ export class NewsCollector {
     }
   }
 
-  /**
-   * Xử lý song song với giới hạn concurrency.
-   * Dùng sentinel object để phân biệt "lỗi" vs "kết quả hợp lệ là undefined".
-   */
   private async processPool<T, R>(
     items: T[],
     fn: (item: T) => Promise<R>,
@@ -324,8 +431,17 @@ export class NewsCollector {
     };
 
     await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
-
     return results.filter((r): r is R => r !== FAILED);
+  }
+
+  private parseUnixDate(value?: number): Date {
+    if (typeof value !== "number" || !Number.isFinite(value)) return new Date();
+    return new Date(value * 1000);
+  }
+
+  private normalizeCount(value: unknown): number | undefined {
+    const count = Number(value);
+    return Number.isInteger(count) && count >= 0 ? count : undefined;
   }
 
   private parseDate(value?: string): Date {

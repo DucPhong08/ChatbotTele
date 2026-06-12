@@ -36,7 +36,10 @@ export function startCollectNewsJob(
         const sortedNew = [...notifyArticles].sort((a, b) => {
           const scoreA = Number.isInteger(a.importanceScore) ? a.importanceScore! : 50;
           const scoreB = Number.isInteger(b.importanceScore) ? b.importanceScore! : 50;
-          return scoreB - scoreA;
+          if (scoreA !== scoreB) return scoreB - scoreA;
+          const commentsA = Number.isInteger(a.commentCount) ? a.commentCount! : 0;
+          const commentsB = Number.isInteger(b.commentCount) ? b.commentCount! : 0;
+          return commentsB - commentsA;
         });
         const topNew = sortedNew.slice(0, 5);
 

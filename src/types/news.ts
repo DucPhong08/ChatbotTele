@@ -9,6 +9,7 @@ export interface News {
   category?: string;
   tags?: string[];
   skills?: string[];
+  commentCount?: number;
   importanceScore?: number;
   importanceReason?: string;
   importanceReasonEn?: string;
@@ -28,6 +29,7 @@ export type CreateNewsInput = Pick<
   | "category"
   | "tags"
   | "skills"
+  | "commentCount"
   | "importanceScore"
   | "importanceReason"
   | "importanceReasonEn"
@@ -45,6 +47,7 @@ export type NewsView = Pick<
   | "category"
   | "tags"
   | "skills"
+  | "commentCount"
   | "importanceScore"
   | "importanceReason"
   | "importanceReasonEn"
