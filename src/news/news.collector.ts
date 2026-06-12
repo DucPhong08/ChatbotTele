@@ -20,9 +20,12 @@ const customAgent = new Agent({
   },
 });
 
-async function fetchUrl(url: string): Promise<string> {
+async function fetchUrl(url: string, headers?: Record<string, string>): Promise<string> {
   const response = await fetch(url, {
-    headers: { "User-Agent": FETCH_USER_AGENT },
+    headers: {
+      "User-Agent": FETCH_USER_AGENT,
+      ...headers,
+    },
     signal: AbortSignal.timeout(15_000),
     dispatcher: customAgent,
   } as any);
@@ -47,21 +50,6 @@ type RssItem = {
   comments?: string;
   "slash:comments"?: string | number;
   "content:encoded"?: string;
-};
-
-type RedditListing = {
-  data?: {
-    children?: Array<{
-      data?: {
-        title?: string;
-        url?: string;
-        permalink?: string;
-        selftext?: string;
-        created_utc?: number;
-        num_comments?: number;
-      };
-    }>;
-  };
 };
 
 type CandidateArticle = {
@@ -328,67 +316,37 @@ export class NewsCollector {
       })
       .filter((item): item is CandidateArticle => item !== null);
   }
-
   private async fetchRedditCandidates(
     targetUrl: string,
     seenUrls: Set<string>,
   ): Promise<CandidateArticle[]> {
     try {
-      const raw = await fetchUrl(this.toRedditJsonUrl(targetUrl));
-      const listing = JSON.parse(raw) as RedditListing;
-      return (listing.data?.children ?? [])
-        .map((child) => {
-          const post = child.data;
-          const title = post?.title?.trim();
-          const url =
-            this.normalizeUrl(post?.url) ||
-            this.normalizeUrl(post?.permalink ? "https://www.reddit.com" + post.permalink : "");
-
+      const fallbackUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(targetUrl)}`;
+      const raw = await fetchUrl(fallbackUrl);
+      const rssData = JSON.parse(raw);
+      if (rssData.status !== "ok") {
+        throw new Error(`RSS2JSON status: ${rssData.status}`);
+      }
+      const items = Array.isArray(rssData.items) ? rssData.items : [];
+      return items
+        .map((item: any): CandidateArticle | null => {
+          const title = item.title?.trim();
+          const url = this.normalizeUrl(item.link);
           if (!title || !url || seenUrls.has(url)) return null;
           seenUrls.add(url);
           return {
             title,
             url,
-            content: post?.selftext?.trim() || "",
-            publishedAt: this.parseUnixDate(post?.created_utc),
-            commentCount: this.normalizeCount(post?.num_comments),
+            content: item.content || item.description || "",
+            publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
+            commentCount: 0,
           };
         })
-        .filter((item): item is CandidateArticle => item !== null);
+        .filter((item: CandidateArticle | null): item is CandidateArticle => item !== null);
     } catch (error) {
-      console.warn(
-        `${LOG} Lỗi khi tải JSON Reddit trực tiếp (${targetUrl}), thử qua RSS2JSON fallback... Chi tiết: ${(error as Error).message}`,
-      );
-      try {
-        const fallbackUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(targetUrl)}`;
-        const raw = await fetchUrl(fallbackUrl);
-        const rssData = JSON.parse(raw);
-        if (rssData.status === "ok" && Array.isArray(rssData.items)) {
-          return rssData.items
-            .map((item: any) => {
-              const title = item.title?.trim();
-              const url = this.normalizeUrl(item.link);
-              if (!title || !url || seenUrls.has(url)) return null;
-              seenUrls.add(url);
-              return {
-                title,
-                url,
-                content: item.content || item.description || "",
-                publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
-                commentCount: 0,
-              };
-            })
-            .filter((item: any): item is CandidateArticle => item !== null);
-        }
-      } catch (fallbackError) {
-        console.error(`${LOG} Fallback RSS2JSON cũng thất bại cho ${targetUrl}:`, fallbackError);
-      }
+      console.error(`${LOG} Thất bại khi tải feed Reddit qua RSS2JSON (${targetUrl}):`, error);
       return [];
     }
-  }
-
-  private toRedditJsonUrl(targetUrl: string): string {
-    return targetUrl.replace(/\/\.rss$/, ".json").replace(/\.rss$/, ".json");
   }
 
   private extractCommentCount(item: RssItem): number | undefined {
@@ -466,11 +424,6 @@ export class NewsCollector {
 
     await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
     return results.filter((r): r is R => r !== FAILED);
-  }
-
-  private parseUnixDate(value?: number): Date {
-    if (typeof value !== "number" || !Number.isFinite(value)) return new Date();
-    return new Date(value * 1000);
   }
 
   private normalizeCount(value: unknown): number | undefined {
