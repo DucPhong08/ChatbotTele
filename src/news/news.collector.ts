@@ -1,5 +1,4 @@
 import Parser from "rss-parser";
-import { Agent } from "undici";
 import { NewsService } from "./news.service";
 import { type CreateNewsInput, type NewsView } from "../types/news";
 import { type FeedQuality } from "../types/feed";
@@ -10,30 +9,6 @@ import { feeds as devFeeds } from "./feed/feeds-dev.config";
 import { feeds as mxhFeeds } from "./feed/feeds-mxh.config";
 import { FeedModel } from "./feed.model";
 import { scrapeArticleContent } from "../utils/scraper";
-
-const FETCH_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-const customAgent = new Agent({
-  connect: {
-    rejectUnauthorized: false,
-  },
-});
-
-async function fetchUrl(url: string, headers?: Record<string, string>): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": FETCH_USER_AGENT,
-      ...headers,
-    },
-    signal: AbortSignal.timeout(15_000),
-    dispatcher: customAgent,
-  } as any);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} khi tải ${url}`);
-  }
-  return response.text();
-}
 
 const feeds = env.feedSource === "mxh" ? mxhFeeds : devFeeds;
 
@@ -72,6 +47,7 @@ type FeedDoc = {
 
 const LOG = "[NewsCollector]";
 const FEED_FETCH_COOLDOWN_MS = 3 * 60 * 1000;
+const FEED_FETCH_TIMEOUT_MS = 30_000;
 const AI_BATCH_SIZE = 5;
 const SCRAPE_CONCURRENCY = 3;
 
@@ -81,6 +57,17 @@ export class NewsCollector {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+    },
+    requestOptions: {
+      rejectUnauthorized: false,
+    },
+  });
+
+  private readonly redditParser = new Parser<RssFeed, RssItem>({
+    headers: {
+      "User-Agent": "Slackbot 1.0 (+https://api.slack.com/robots)",
+      Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
     },
     requestOptions: {
       rejectUnauthorized: false,
@@ -99,22 +86,19 @@ export class NewsCollector {
 
     const seenUrls = new Set<string>();
 
-    // Bước 1: Tải RSS/JSON song song từ tất cả các nguồn
-    const fetchResults = await Promise.allSettled(
-      activeFeeds.map(async (feed) => ({
-        feed,
-        items: await this.fetchFeedItems(feed, seenUrls, options?.force),
-      })),
+    // Bước 1: Tải RSS song song có giới hạn concurrency (tránh nghẽn threadpool/DNS)
+    const fetchResults = await this.processPool(
+      activeFeeds,
+      async (feed) => {
+        const items = await this.fetchFeedItems(feed, seenUrls, options?.force);
+        return { feed, items };
+      },
+      5,
     );
 
     // Bước 2: Xử lý AI tuần tự (tránh rate limit)
     const collectedItems: CreateNewsInput[] = [];
-    for (const result of fetchResults) {
-      if (result.status === "rejected") {
-        console.error(`${LOG} Thất bại khi tải feed:`, result.reason);
-        continue;
-      }
-      const { feed, items } = result.value;
+    for (const { feed, items } of fetchResults) {
       if (items.length === 0) continue;
 
       // Lọc sơ bộ bằng rule-based score để tránh quá tải AI
@@ -176,14 +160,31 @@ export class NewsCollector {
           targetUrl = targetUrl.replace(/\/\.rss$/, "").replace(/\/$/, "") + "/hot/.rss";
         }
 
-        const candidates = await this.fetchRedditCandidates(targetUrl, seenUrls);
+        let timeoutId: NodeJS.Timeout | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error("Timeout khi tải feed Reddit (30s)")),
+            FEED_FETCH_TIMEOUT_MS,
+          );
+        });
+
+        const parsedFeed = await Promise.race([
+          this.redditParser.parseURL(targetUrl),
+          timeoutPromise,
+        ]);
+
+        if (timeoutId) clearTimeout(timeoutId);
         this.lastFetchTimes.set(feed.url, Date.now());
-        return this.filterNewCandidates(candidates);
+        const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
+        return candidates.length === 0 ? [] : this.filterNewCandidates(candidates);
       }
 
       let timeoutId: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error("Timeout khi tải feed RSS (15s)")), 15000);
+        timeoutId = setTimeout(
+          () => reject(new Error("Timeout khi tải feed RSS (30s)")),
+          FEED_FETCH_TIMEOUT_MS,
+        );
       });
 
       const parsedFeed = await Promise.race([this.parser.parseURL(targetUrl), timeoutPromise]);
@@ -337,38 +338,6 @@ export class NewsCollector {
         };
       })
       .filter((item): item is CandidateArticle => item !== null);
-  }
-  private async fetchRedditCandidates(
-    targetUrl: string,
-    seenUrls: Set<string>,
-  ): Promise<CandidateArticle[]> {
-    try {
-      const fallbackUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(targetUrl)}`;
-      const raw = await fetchUrl(fallbackUrl);
-      const rssData = JSON.parse(raw);
-      if (rssData.status !== "ok") {
-        throw new Error(`RSS2JSON status: ${rssData.status}`);
-      }
-      const items = Array.isArray(rssData.items) ? rssData.items : [];
-      return items
-        .map((item: any): CandidateArticle | null => {
-          const title = item.title?.trim();
-          const url = this.normalizeUrl(item.link);
-          if (!title || !url || seenUrls.has(url)) return null;
-          seenUrls.add(url);
-          return {
-            title,
-            url,
-            content: item.content || item.description || "",
-            publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
-            commentCount: 0,
-          };
-        })
-        .filter((item: CandidateArticle | null): item is CandidateArticle => item !== null);
-    } catch (error) {
-      console.error(`${LOG} Thất bại khi tải feed Reddit qua RSS2JSON (${targetUrl}):`, error);
-      return [];
-    }
   }
 
   private extractCommentCount(item: RssItem): number | undefined {

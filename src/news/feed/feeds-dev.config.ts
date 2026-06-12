@@ -12,14 +12,6 @@ export const feeds: FeedConfig[] = [
     minScore: 65,
   },
   {
-    source: "Anthropic News",
-    url: "https://www.anthropic.com/news/rss.xml",
-    category: "ai",
-    skills: ["ai", "llm", "agents", "reasoning"],
-    quality: "official",
-    minScore: 65,
-  },
-  {
     source: "Google AI Blog",
     url: "https://blog.google/technology/ai/rss/",
     category: "ai",
@@ -110,7 +102,7 @@ export const feeds: FeedConfig[] = [
   },
   {
     source: "Bun Blog",
-    url: "https://bun.sh/blog/rss.xml",
+    url: "https://bun.com/rss.xml",
     category: "backend",
     skills: ["bun", "javascript", "runtime"],
     quality: "official",
@@ -118,7 +110,7 @@ export const feeds: FeedConfig[] = [
   },
   {
     source: "Deno Blog",
-    url: "https://deno.com/blog/rss.xml",
+    url: "https://deno.com/feed",
     category: "backend",
     skills: ["deno", "typescript", "runtime"],
     quality: "official",
@@ -157,14 +149,6 @@ export const feeds: FeedConfig[] = [
     minScore: 70,
   },
   {
-    source: "Uber Engineering",
-    url: "https://www.uber.com/en-VN/blog/engineering/rss/",
-    category: "backend",
-    skills: ["architecture", "distributed-systems"],
-    quality: "engineering",
-    minScore: 70,
-  },
-  {
     source: "Slack Engineering",
     url: "https://slack.engineering/feed",
     category: "backend",
@@ -193,7 +177,7 @@ export const feeds: FeedConfig[] = [
   },
   {
     source: "MongoDB Engineering",
-    url: "https://www.mongodb.com/company/blog/channel/engineering-blog/rss",
+    url: "https://www.mongodb.com/company/blog/rss",
     category: "backend",
     skills: ["mongodb", "database", "distributed-systems"],
     quality: "engineering",
@@ -201,17 +185,9 @@ export const feeds: FeedConfig[] = [
   },
   {
     source: "Redis Blog",
-    url: "https://redis.io/blog/rss/",
+    url: "https://redis.io/blog/feed/",
     category: "backend",
     skills: ["redis", "cache", "database"],
-    quality: "engineering",
-    minScore: 70,
-  },
-  {
-    source: "Percona Blog",
-    url: "https://www.percona.com/blog/feed/",
-    category: "backend",
-    skills: ["mysql", "postgresql", "performance"],
     quality: "engineering",
     minScore: 70,
   },
@@ -243,10 +219,10 @@ export const feeds: FeedConfig[] = [
     minScore: 70,
   },
   {
-    source: "Google SRE",
-    url: "https://sre.google/feed.xml",
+    source: "SRE Weekly",
+    url: "https://sreweekly.com/feed/",
     category: "devops",
-    skills: ["sre", "monitoring", "reliability"],
+    skills: ["sre", "monitoring", "reliability", "postmortem"],
     quality: "engineering",
     minScore: 70,
   },
@@ -381,7 +357,7 @@ export const feeds: FeedConfig[] = [
   },
   {
     source: "Web.dev",
-    url: "https://web.dev/feed.xml",
+    url: "https://web.dev/static/blog/feed.xml",
     category: "frontend",
     skills: ["web-performance", "frontend", "browser"],
     quality: "official",
@@ -389,7 +365,7 @@ export const feeds: FeedConfig[] = [
   },
   {
     source: "Chrome Developers",
-    url: "https://developer.chrome.com/feeds/blog.xml",
+    url: "https://developer.chrome.com/blog/feed.xml",
     category: "frontend",
     skills: ["browser", "web-platform", "performance"],
     quality: "official",
@@ -421,7 +397,7 @@ export const feeds: FeedConfig[] = [
   },
   {
     source: "Vue.js Blog",
-    url: "https://blog.vuejs.org/feed.xml",
+    url: "https://blog.vuejs.org/feed.rss",
     category: "frontend",
     skills: ["vue", "frontend", "javascript"],
     quality: "official",
@@ -437,7 +413,7 @@ export const feeds: FeedConfig[] = [
   },
   {
     source: "Tailwind CSS Blog",
-    url: "https://tailwindcss.com/blog/rss.xml",
+    url: "https://tailwindcss.com/feeds/feed.xml",
     category: "frontend",
     skills: ["tailwind", "css", "frontend"],
     quality: "official",
