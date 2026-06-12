@@ -54,4 +54,6 @@ export type NewsView = Pick<
   | "importanceReason"
   | "importanceReasonEn"
   | "isFallback"
+  | "createdAt"
+  | "updatedAt"
 > & { _id?: any };

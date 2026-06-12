@@ -47,7 +47,13 @@ type FeedDoc = {
 
 const LOG = "[NewsCollector]";
 const FEED_FETCH_COOLDOWN_MS = 3 * 60 * 1000;
-const FEED_FETCH_TIMEOUT_MS = 30_000;
+const FEED_FETCH_TIMEOUT_MS = 12_000;
+const FEED_FETCH_CONCURRENCY = 8;
+const MAX_RAW_ITEMS_PER_FEED = 20;
+const MAX_ITEMS_PER_FEED = 3;
+const MAX_AI_CANDIDATES_PER_RUN = 12;
+const MAX_ARTICLES_PER_RUN = 10;
+const RECENT_ARTICLE_WINDOW_MS = 48 * 60 * 60 * 1000;
 const AI_BATCH_SIZE = 5;
 const SCRAPE_CONCURRENCY = 3;
 
@@ -93,16 +99,21 @@ export class NewsCollector {
         const items = await this.fetchFeedItems(feed, seenUrls, options?.force);
         return { feed, items };
       },
-      5,
+      FEED_FETCH_CONCURRENCY,
     );
 
-    // Bước 2: Xử lý AI tuần tự (tránh rate limit)
-    const collectedItems: CreateNewsInput[] = [];
+    // Bước 2: Lọc và xếp hạng toàn cục trước khi scrape/AI.
+    const scoredCandidates: Array<{
+      feed: FeedDoc;
+      item: CandidateArticle;
+      score: number;
+      category: string;
+    }> = [];
+
     for (const { feed, items } of fetchResults) {
       if (items.length === 0) continue;
 
-      // Lọc sơ bộ bằng rule-based score để tránh quá tải AI
-      const filteredItems = items.filter((item) => {
+      for (const item of items) {
         const metadata = AIService.inferArticleMetadata(
           item.title,
           item.content,
@@ -120,14 +131,52 @@ export class NewsCollector {
           console.log(
             `${LOG} [Pre-filter] Bỏ qua bài viết: "${item.title}" (score=${metadata.importanceScore}, cat=${metadata.category})`,
           );
+          continue;
         }
-        return isRelevant;
-      });
 
-      if (filteredItems.length === 0) continue;
+        scoredCandidates.push({
+          feed,
+          item,
+          score: metadata.importanceScore,
+          category: metadata.category,
+        });
+      }
+    }
 
+    const selectedCandidates = scoredCandidates
+      .sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        const commentsA = a.item.commentCount ?? 0;
+        const commentsB = b.item.commentCount ?? 0;
+        if (commentsA !== commentsB) return commentsB - commentsA;
+        return b.item.publishedAt.getTime() - a.item.publishedAt.getTime();
+      })
+      .slice(0, MAX_AI_CANDIDATES_PER_RUN);
+
+    if (selectedCandidates.length === 0) return [];
+
+    console.log(
+      `${LOG} Chọn ${selectedCandidates.length}/${scoredCandidates.length} bài tốt nhất để scrape/AI.`,
+    );
+
+    const candidatesByFeed = new Map<string, { feed: FeedDoc; items: CandidateArticle[] }>();
+    for (const candidate of selectedCandidates) {
+      const group = candidatesByFeed.get(candidate.feed.url);
+      if (group) {
+        group.items.push(candidate.item);
+      } else {
+        candidatesByFeed.set(candidate.feed.url, {
+          feed: candidate.feed,
+          items: [candidate.item],
+        });
+      }
+    }
+
+    // Bước 3: Xử lý AI tuần tự theo feed (tránh rate limit)
+    const collectedItems: CreateNewsInput[] = [];
+    for (const { feed, items } of candidatesByFeed.values()) {
       try {
-        collectedItems.push(...(await this.processFeedItems(filteredItems, feed)));
+        collectedItems.push(...(await this.processFeedItems(items, feed)));
       } catch (error) {
         console.error(`${LOG} Thất bại khi xử lý AI cho feed: ${feed.source}`, error);
       }
@@ -135,8 +184,20 @@ export class NewsCollector {
 
     if (collectedItems.length === 0) return [];
 
-    await this.newsService.createManyIfNotExists(collectedItems);
-    const urls = collectedItems.map((item) => item.url);
+    const topItems = collectedItems
+      .sort((a, b) => {
+        const scoreA = Number.isInteger(a.importanceScore) ? a.importanceScore! : 0;
+        const scoreB = Number.isInteger(b.importanceScore) ? b.importanceScore! : 0;
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        const commentsA = a.commentCount ?? 0;
+        const commentsB = b.commentCount ?? 0;
+        if (commentsA !== commentsB) return commentsB - commentsA;
+        return b.publishedAt.getTime() - a.publishedAt.getTime();
+      })
+      .slice(0, MAX_ARTICLES_PER_RUN);
+
+    await this.newsService.createManyIfNotExists(topItems);
+    const urls = topItems.map((item) => item.url);
     return NewsModel.find({ url: { $in: urls } })
       .lean<NewsView[]>()
       .exec();
@@ -163,7 +224,7 @@ export class NewsCollector {
         let timeoutId: NodeJS.Timeout | undefined;
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(
-            () => reject(new Error("Timeout khi tải feed Reddit (30s)")),
+            () => reject(new Error("Timeout khi tải feed Reddit (12s)")),
             FEED_FETCH_TIMEOUT_MS,
           );
         });
@@ -175,14 +236,13 @@ export class NewsCollector {
 
         if (timeoutId) clearTimeout(timeoutId);
         this.lastFetchTimes.set(feed.url, Date.now());
-        const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
-        return candidates.length === 0 ? [] : this.filterNewCandidates(candidates);
+        return this.prepareCandidates(parsedFeed.items, seenUrls);
       }
 
       let timeoutId: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(
-          () => reject(new Error("Timeout khi tải feed RSS (30s)")),
+          () => reject(new Error("Timeout khi tải feed RSS (12s)")),
           FEED_FETCH_TIMEOUT_MS,
         );
       });
@@ -192,8 +252,7 @@ export class NewsCollector {
       if (timeoutId) clearTimeout(timeoutId);
       this.lastFetchTimes.set(feed.url, Date.now());
 
-      const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
-      return candidates.length === 0 ? [] : this.filterNewCandidates(candidates);
+      return this.prepareCandidates(parsedFeed.items, seenUrls);
     } catch (error: any) {
       console.warn(
         `${LOG} Thất bại khi tải nguồn "${feed.source}" (${feed.url}):`,
@@ -338,6 +397,21 @@ export class NewsCollector {
         };
       })
       .filter((item): item is CandidateArticle => item !== null);
+  }
+
+  private async prepareCandidates(
+    items: RssItem[] = [],
+    seenUrls: Set<string>,
+  ): Promise<CandidateArticle[]> {
+    const now = Date.now();
+    const candidates = this.extractCandidates(items.slice(0, MAX_RAW_ITEMS_PER_FEED), seenUrls)
+      .filter((item) => now - item.publishedAt.getTime() <= RECENT_ARTICLE_WINDOW_MS)
+      .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
+
+    if (candidates.length === 0) return [];
+
+    const newCandidates = await this.filterNewCandidates(candidates);
+    return newCandidates.slice(0, MAX_ITEMS_PER_FEED);
   }
 
   private extractCommentCount(item: RssItem): number | undefined {

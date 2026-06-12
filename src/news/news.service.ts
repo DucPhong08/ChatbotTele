@@ -40,9 +40,9 @@ export class NewsService {
         },
         {
           $sort: {
-            importanceScore: -1 as const,
-            commentCount: -1 as const,
             publishedAt: -1 as const,
+            importanceScore: -1 as const,
+            createdAt: -1 as const,
           },
         },
         {
@@ -63,17 +63,24 @@ export class NewsService {
       const diversified = await NewsModel.aggregate(pipeline).exec();
 
       return diversified.sort((a: NewsView, b: NewsView) => {
+        const pubA = new Date(a.publishedAt).getTime();
+        const pubB = new Date(b.publishedAt).getTime();
+        if (pubA !== pubB) {
+          return pubB - pubA;
+        }
         const scoreA = Number.isInteger(a.importanceScore) ? (a.importanceScore as number) : 50;
         const scoreB = Number.isInteger(b.importanceScore) ? (b.importanceScore as number) : 50;
         if (scoreA !== scoreB) {
           return scoreB - scoreA;
         }
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (timeA !== timeB) {
+          return timeB - timeA;
+        }
         const commentsA = Number.isInteger(a.commentCount) ? (a.commentCount as number) : 0;
         const commentsB = Number.isInteger(b.commentCount) ? (b.commentCount as number) : 0;
-        if (commentsA !== commentsB) {
-          return commentsB - commentsA;
-        }
-        return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+        return commentsB - commentsA;
       });
     };
 
