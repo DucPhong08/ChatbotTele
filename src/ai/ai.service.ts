@@ -52,6 +52,14 @@ type ArticleProcessInput = {
 
 const AI_RETRY_DELAYS_MS = [500, 1500];
 
+// Phương án dự phòng cuối cùng: OpenRouter free model (không cần cấu hình)
+const FREE_FALLBACK_MODEL = "google/gemini-2.5-flash:free";
+const FREE_FALLBACK_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+const FREE_FALLBACK_HEADERS = {
+  "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
+  "X-Title": "Chatbot News Telegram",
+};
+
 const SOURCE_SCORES: Record<string, number> = {
   "OpenAI Blog": 18,
   "GitHub Blog": 16,
@@ -886,6 +894,56 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /**
+   * Phương án dự phòng cuối cùng: gọi OpenRouter với model free hardcoded.
+   * Chỉ được gọi khi TẤT CẢ provider đã cấu hình đều thất bại.
+   */
+  private static async processWithOpenRouterFree(
+    title: string,
+    content: string,
+    source: string,
+    url: string,
+    publishedAt: Date,
+  ): Promise<AIProcessedResult> {
+    const response = await this.fetchWithTimeout(FREE_FALLBACK_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.openrouterApiKey}`,
+        ...FREE_FALLBACK_HEADERS,
+      },
+      body: JSON.stringify({
+        model: FREE_FALLBACK_MODEL,
+        messages: [
+          { role: "system", content: TECH_NEWS_PROMPT },
+          { role: "user", content: this.buildArticlePrompt(title, content, source, url) },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter free API returned status ${response.status}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const choiceContent = data.choices?.[0]?.message?.content;
+    if (!choiceContent) {
+      throw new Error("Không nhận được nội dung từ OpenRouter free API.");
+    }
+
+    return this.validateAndNormalizeResult(
+      JSON.parse(choiceContent) as unknown,
+      title,
+      content,
+      source,
+      publishedAt,
+    );
+  }
+
   private static async processWithProvider(
     provider: AiProvider,
     title: string,
@@ -1010,6 +1068,38 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
       }
     }
 
+    // Phương án dự phòng cuối: thử OpenRouter free model
+    if (env.openrouterApiKey) {
+      try {
+        console.log(
+          "[AI Failover] Thử phương án dự phòng cuối: OpenRouter free (" +
+            FREE_FALLBACK_MODEL +
+            ")",
+        );
+        const result = await this.processWithOpenRouterFree(
+          title,
+          content,
+          source,
+          url,
+          publishedAt,
+        );
+        console.log("[AI Failover] Xử lý thành công bằng OpenRouter free.");
+        return {
+          ...result,
+          titleVi: this.normalizeDevTerms(result.titleVi),
+          titleEn: this.normalizeDevTerms(result.titleEn),
+          summaryVi: this.normalizeDevTerms(result.summaryVi),
+          summaryEn: this.normalizeDevTerms(result.summaryEn),
+          importanceReasonVi: this.normalizeDevTerms(result.importanceReasonVi),
+          importanceReasonEn: this.normalizeDevTerms(result.importanceReasonEn),
+        };
+      } catch (freeError) {
+        console.warn(
+          "[AI Failover] OpenRouter free cũng thất bại: " + (freeError as Error).message,
+        );
+      }
+    }
+
     console.warn(
       "[AI Failover] Tất cả các nhà cung cấp AI đều thất bại. Sử dụng rule-based fallback.",
     );
@@ -1068,7 +1158,39 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
       }
     }
 
-    console.warn("[AI Batch] Batch thất bại. Sử dụng fallback cho toàn bộ batch.");
+    // Phương án dự phòng cuối: thử OpenRouter free model
+    if (env.openrouterApiKey) {
+      try {
+        console.log(
+          "[AI Batch] Thử phương án dự phòng cuối: OpenRouter free (" + FREE_FALLBACK_MODEL + ")",
+        );
+        const rawResult = await this.callChatCompletion(
+          FREE_FALLBACK_ENDPOINT,
+          env.openrouterApiKey,
+          FREE_FALLBACK_MODEL,
+          batchPrompt,
+          TECH_NEWS_PROMPT,
+          FREE_FALLBACK_HEADERS,
+        );
+        const parsed = await this.parseBatchResult(rawResult, articles);
+        if (parsed) {
+          console.log("[AI Batch] OpenRouter free xử lý thành công.");
+          return parsed.map((result) => ({
+            ...result,
+            titleVi: this.normalizeDevTerms(result.titleVi),
+            titleEn: this.normalizeDevTerms(result.titleEn),
+            summaryVi: this.normalizeDevTerms(result.summaryVi),
+            summaryEn: this.normalizeDevTerms(result.summaryEn),
+            importanceReasonVi: this.normalizeDevTerms(result.importanceReasonVi),
+            importanceReasonEn: this.normalizeDevTerms(result.importanceReasonEn),
+          }));
+        }
+      } catch (freeError) {
+        console.warn("[AI Batch] OpenRouter free cũng thất bại: " + (freeError as Error).message);
+      }
+    }
+
+    console.warn("[AI Batch] Tất cả đều thất bại. Sử dụng rule-based fallback.");
     return Promise.all(
       articles.map((article) =>
         this.getFallback(article.title, article.content, article.source, article.publishedAt),

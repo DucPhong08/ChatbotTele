@@ -1,4 +1,4 @@
-import { isValidObjectId } from "mongoose";
+import { isValidObjectId, type PipelineStage } from "mongoose";
 import { NewsModel } from "./news.model";
 import { type CreateNewsInput, type NewsView } from "../types/news";
 
@@ -36,7 +36,7 @@ export class NewsService {
     const perSourceLimit = Math.max(5, Math.ceil((limit + skip) / 2));
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000); // 48h window
 
-    const pipeline: any[] = [
+    const pipeline: PipelineStage[] = [
       {
         $match: {
           ...matchFilter,
@@ -69,7 +69,7 @@ export class NewsService {
     const diversified = await NewsModel.aggregate(pipeline).exec();
 
     // Sắp xếp tổng hợp: ưu tiên điểm cao, rồi mới nhất
-    const sorted = diversified.sort((a: any, b: any) => {
+    const sorted = diversified.sort((a: NewsView, b: NewsView) => {
       const scoreA = Number.isInteger(a.importanceScore) ? (a.importanceScore as number) : 50;
       const scoreB = Number.isInteger(b.importanceScore) ? (b.importanceScore as number) : 50;
       if (scoreA !== scoreB) {

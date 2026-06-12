@@ -44,6 +44,20 @@ export async function broadcastToSubscribers(
     return result;
   }
 
+  // Truy vấn gộp toàn bộ lịch sử gửi tin 1 lần thay vì N lần (N+1 query fix)
+  const allArticleIds = articles.filter((a) => Boolean(a._id)).map((a) => a._id);
+  const allChatIds = subscribers.map((s) => s.chatId);
+
+  const sentLogs = await SentLogModel.find({
+    chatId: { $in: allChatIds },
+    articleId: { $in: allArticleIds },
+  })
+    .select("chatId articleId")
+    .lean<Array<{ chatId: number | string; articleId: unknown }>>()
+    .exec();
+
+  const sentSet = new Set(sentLogs.map((log) => `${log.chatId}_${log.articleId}`));
+
   console.log(
     `[Broadcaster] Đang gửi tin tới ${subscribers.length} subscriber ` +
       `(delay ${BROADCAST_DELAY_MS}ms/tin)...`,
@@ -51,7 +65,7 @@ export async function broadcastToSubscribers(
 
   for (const sub of subscribers) {
     try {
-      const userArticles = await getUnsentArticlesForUser(sub, articles, topArticles);
+      const userArticles = await getUnsentArticlesForUser(sub, articles, topArticles, sentSet);
 
       if (userArticles.length === 0) {
         result.skipped++;
@@ -114,6 +128,7 @@ async function getUnsentArticlesForUser(
   sub: Subscriber,
   allArticles: NewsView[],
   topArticles: NewsView[],
+  sentSet: Set<string>,
 ): Promise<NewsView[]> {
   let userArticles = await filterArticlesForUser(sub, allArticles, topArticles);
 
@@ -123,20 +138,8 @@ async function getUnsentArticlesForUser(
     return [];
   }
 
-  const articleIds = userArticles.map((article) => article._id);
-
-  const sentLogs = await SentLogModel.find({
-    chatId: sub.chatId,
-    articleId: { $in: articleIds },
-  })
-    .select("articleId")
-    .lean<Array<{ articleId: unknown }>>()
-    .exec();
-
-  const sentIds = new Set(sentLogs.map((log) => String(log.articleId)));
-
   return userArticles
-    .filter((article) => !sentIds.has(String(article._id)))
+    .filter((article) => !sentSet.has(`${sub.chatId}_${article._id}`))
     .slice(0, MAX_ARTICLES_PER_USER);
 }
 
