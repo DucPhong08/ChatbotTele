@@ -847,6 +847,7 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
       importanceScore: baseline.importanceScore,
       importanceReasonVi: baseline.importanceReason,
       importanceReasonEn: `Article from ${source}.`,
+      isFallback: true,
     };
   }
 
@@ -1840,7 +1841,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     };
   }
 
-  private static inferArticleMetadata(
+  public static inferArticleMetadata(
     title: string,
     content: string,
     source: string,

@@ -19,4 +19,5 @@ export interface AIProcessedResult {
   importanceScore: number;
   importanceReasonVi: string;
   importanceReasonEn: string;
+  isFallback?: boolean;
 }

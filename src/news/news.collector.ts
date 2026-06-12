@@ -103,7 +103,7 @@ export class NewsCollector {
 
   constructor(private readonly newsService: NewsService) {}
 
-  async collect(): Promise<NewsView[]> {
+  async collect(options?: { force?: boolean }): Promise<NewsView[]> {
     await this.seedFeedsIfEmpty();
 
     const activeFeeds = await FeedModel.find({ isActive: true }).lean().exec();
@@ -115,7 +115,7 @@ export class NewsCollector {
     const fetchResults = await Promise.allSettled(
       activeFeeds.map(async (feed) => ({
         feed,
-        items: await this.fetchFeedItems(feed, seenUrls),
+        items: await this.fetchFeedItems(feed, seenUrls, options?.force),
       })),
     );
 
@@ -128,8 +128,28 @@ export class NewsCollector {
       }
       const { feed, items } = result.value;
       if (items.length === 0) continue;
+
+      // Lọc sơ bộ bằng rule-based score để tránh quá tải AI
+      const filteredItems = items.filter((item) => {
+        const metadata = AIService.inferArticleMetadata(
+          item.title,
+          item.content,
+          feed.source,
+          item.publishedAt,
+        );
+        const isRelevant = metadata.importanceScore >= 40 || metadata.category !== "other";
+        if (!isRelevant) {
+          console.log(
+            `${LOG} [Pre-filter] Bỏ qua bài viết không liên quan: "${item.title}" (score=${metadata.importanceScore}, cat=${metadata.category})`,
+          );
+        }
+        return isRelevant;
+      });
+
+      if (filteredItems.length === 0) continue;
+
       try {
-        collectedItems.push(...(await this.processFeedItems(items, feed)));
+        collectedItems.push(...(await this.processFeedItems(filteredItems, feed)));
       } catch (error) {
         console.error(`${LOG} Thất bại khi xử lý AI cho feed: ${feed.source}`, error);
       }
@@ -144,8 +164,12 @@ export class NewsCollector {
       .exec();
   }
 
-  private async fetchFeedItems(feed: FeedDoc, seenUrls: Set<string>): Promise<CandidateArticle[]> {
-    if (this.shouldSkipFeed(feed.url, feed.source)) return [];
+  private async fetchFeedItems(
+    feed: FeedDoc,
+    seenUrls: Set<string>,
+    force = false,
+  ): Promise<CandidateArticle[]> {
+    if (this.shouldSkipFeed(feed.url, feed.source, force)) return [];
 
     let targetUrl = feed.url;
     if (targetUrl.includes("reddit.com")) {
@@ -242,6 +266,7 @@ export class NewsCollector {
       importanceScore: typeof aiResult.importanceScore === "number" ? aiResult.importanceScore : 50,
       importanceReason: aiResult.importanceReasonVi || "",
       importanceReasonEn: aiResult.importanceReasonEn || "",
+      isFallback: aiResult.isFallback,
     };
   }
 
@@ -276,7 +301,8 @@ export class NewsCollector {
     );
   }
 
-  private shouldSkipFeed(feedUrl: string, source: string): boolean {
+  private shouldSkipFeed(feedUrl: string, source: string, force = false): boolean {
+    if (force) return false;
     const lastFetch = this.lastFetchTimes.get(feedUrl) ?? 0;
     if (Date.now() - lastFetch < FEED_FETCH_COOLDOWN_MS) {
       console.log(`${LOG} Bỏ qua nguồn ${source} vì vừa quét dưới 3 phút trước.`);
@@ -379,11 +405,11 @@ export class NewsCollector {
 
   private shouldKeepArticle(item: CreateNewsInput, feed: FeedDoc): boolean {
     const score = Number.isInteger(item.importanceScore) ? item.importanceScore! : 0;
-    const minScore = this.getMinScore(feed);
+    const minScore = item.isFallback ? 45 : this.getMinScore(feed);
 
     if (score < minScore) {
       console.log(
-        `${LOG} Loại bài "${item.title}" (score=${score}, min=${minScore}) - không đủ mức đáng đọc.`,
+        `${LOG} Loại bài "${item.title}" (score=${score}, min=${minScore}${item.isFallback ? ", fallback" : ""}) - không đủ mức đáng đọc.`,
       );
       return false;
     }

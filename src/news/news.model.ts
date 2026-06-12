@@ -19,6 +19,7 @@ const newsSchema = new Schema<News>(
     importanceScore: { type: Number, default: 50 },
     importanceReason: { type: String, trim: true },
     importanceReasonEn: { type: String, trim: true },
+    isFallback: { type: Boolean, default: false },
   },
   {
     timestamps: true,

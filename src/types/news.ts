@@ -13,6 +13,7 @@ export interface News {
   importanceScore?: number;
   importanceReason?: string;
   importanceReasonEn?: string;
+  isFallback?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +34,7 @@ export type CreateNewsInput = Pick<
   | "importanceScore"
   | "importanceReason"
   | "importanceReasonEn"
+  | "isFallback"
 >;
 
 export type NewsView = Pick<
@@ -51,4 +53,5 @@ export type NewsView = Pick<
   | "importanceScore"
   | "importanceReason"
   | "importanceReasonEn"
+  | "isFallback"
 > & { _id?: any };
