@@ -3,8 +3,6 @@ import {
   formatNewsList,
   formatNewsDetail,
   hasVietnamese,
-  formatSingleArticleForBroadcast,
-  buildSingleArticleKeyboard,
   escapeHtml,
 } from "../../news/news.formatter";
 import { NewsService } from "../../news/news.service";

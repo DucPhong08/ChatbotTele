@@ -1,10 +1,7 @@
-import { type Bot, type Context, InlineKeyboard } from "grammy";
+import { type Bot, type Context } from "grammy";
 import { SubscriberModel } from "./subscriber.model";
 import { SentLogModel } from "./sent-log.model";
-import {
-  formatSingleArticleForBroadcast,
-  buildSingleArticleKeyboard,
-} from "../news/news.formatter";
+import { formatArticlesBatch } from "../news/news.formatter";
 import { AIService } from "../ai/ai.service";
 import { type NewsView } from "../types/news";
 import { type Subscriber } from "../types/subscriber";
@@ -76,20 +73,14 @@ export async function broadcastToSubscribers(
       }
 
       const lang = sub.language === "en" ? "en" : "vi";
+      const preferredCategories = getPreferredCategories(sub);
 
-      for (const article of userArticles) {
-        const message = formatSingleArticleForBroadcast(article, botUsername, lang);
-        const replyMarkup = buildSingleArticleKeyboard(article, lang);
+      const message = formatArticlesBatch(userArticles, botUsername, preferredCategories, lang);
 
-        await bot.api.sendMessage(sub.chatId, message, {
-          parse_mode: "HTML",
-          ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-          link_preview_options: { is_disabled: true },
-        });
-
-        // Delay short time between messages to the same user to prevent spam block and maintain correct order
-        await sleep(250);
-      }
+      await bot.api.sendMessage(sub.chatId, message, {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+      });
 
       await insertSentLogs(sub.chatId, userArticles);
 
