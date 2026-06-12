@@ -3,6 +3,8 @@ import { NewsCollector } from "../../news/news.collector";
 import { env } from "../../config/env";
 
 export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector): void {
+  let isSyncing = false;
+
   bot.command("sync", async (ctx) => {
     const chatId = ctx.chat.id;
 
@@ -15,6 +17,18 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
       return;
     }
 
+    if (isSyncing) {
+      await ctx.reply(
+        "⚠️ Tiến trình đồng bộ tin tức đang chạy. Vui lòng đợi tiến trình trước đó hoàn thành!",
+      );
+      return;
+    }
+
+    isSyncing = true;
+    const statusMsg = await ctx.reply(
+      "⚡ Đang tiến hành thu thập tin tức mới từ các nguồn bằng AI. Quá trình này mất khoảng 1-2 phút, vui lòng đợi...",
+    );
+
     console.log("[SyncCommand] Đang tiến hành thu thập tin tức mới bằng AI...");
 
     try {
@@ -22,7 +36,7 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
 
       if (newArticles.length === 0) {
         console.log("[SyncCommand] Đã hoàn tất kiểm tra. Không có tin tức mới nào.");
-        await ctx.reply("Không có tin tức mới nào.");
+        await ctx.api.editMessageText(chatId, statusMsg.message_id, "Không có tin tức mới nào.");
         return;
       }
 
@@ -35,7 +49,11 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
         console.log(
           `[SyncCommand] Đã thu thập thêm ${newArticles.length} bài viết mới, nhưng chưa có bài nào đạt ngưỡng gửi ${env.notificationMinScore}/100.`,
         );
-        await ctx.reply("Không có bài viết mới nào đủ tiêu chuẩn gửi.");
+        await ctx.api.editMessageText(
+          chatId,
+          statusMsg.message_id,
+          `Đã thu thập thêm ${newArticles.length} bài viết mới, nhưng chưa có bài nào đạt ngưỡng gửi ${env.notificationMinScore}/100.`,
+        );
         return;
       }
 
@@ -58,9 +76,26 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
       console.log(
         `[SyncCommand] Đã hoàn tất gửi tin tức mới:\n- Gửi thành công: ${result.sent} người dùng\n- Bỏ qua (không trùng sở thích): ${result.skipped}\n- Lỗi/Bị chặn: ${result.failed + result.deactivated}`,
       );
+
+      await ctx.api.editMessageText(
+        chatId,
+        statusMsg.message_id,
+        `✅ Đã hoàn thành đồng bộ!\n` +
+          `- Tổng số bài mới: ${newArticles.length}\n` +
+          `- Số bài đạt tiêu chuẩn gửi: ${notifyArticles.length}\n` +
+          `- Đã gửi thành công đến: ${result.sent} người dùng`,
+      );
     } catch (error) {
       console.error("Lỗi khi chạy lệnh /sync:", error);
-      await ctx.reply("Tiến trình thu thập tin tức thất bại. Vui lòng kiểm tra lại cấu hình AI.");
+      await ctx.api
+        .editMessageText(
+          chatId,
+          statusMsg.message_id,
+          "❌ Tiến trình thu thập tin tức thất bại. Vui lòng kiểm tra lại cấu hình AI hoặc log server.",
+        )
+        .catch(() => {});
+    } finally {
+      isSyncing = false;
     }
   });
 }
