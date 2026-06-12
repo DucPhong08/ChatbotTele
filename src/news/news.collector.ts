@@ -181,7 +181,14 @@ export class NewsCollector {
         return this.filterNewCandidates(candidates);
       }
 
-      const parsedFeed = await this.parser.parseURL(targetUrl);
+      let timeoutId: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error("Timeout khi tải feed RSS (15s)")), 15000);
+      });
+
+      const parsedFeed = await Promise.race([this.parser.parseURL(targetUrl), timeoutPromise]);
+
+      if (timeoutId) clearTimeout(timeoutId);
       this.lastFetchTimes.set(feed.url, Date.now());
 
       const candidates = this.extractCandidates(parsedFeed.items, seenUrls);

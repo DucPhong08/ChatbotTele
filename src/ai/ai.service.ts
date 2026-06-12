@@ -978,6 +978,16 @@ Return ONLY a valid JSON object: {"indices": [0, 2]}`;
     const err = error as { name?: string; message?: string };
     const message = (err.message || "").toLowerCase();
 
+    // Không thử lại nếu lỗi liên quan đến hết hạn mức (quota) hoặc giới hạn sử dụng hàng ngày
+    if (
+      message.includes("quota") ||
+      message.includes("free-models-per-day") ||
+      message.includes("limit exceeded") ||
+      message.includes("credits")
+    ) {
+      return false;
+    }
+
     return (
       err.name === "AbortError" ||
       message.includes("aborted") ||

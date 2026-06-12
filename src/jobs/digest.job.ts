@@ -64,6 +64,20 @@ export function startDigestJob(bot: Bot<Context>, cronExpression = "0 * * * *"):
       });
     } catch (error) {
       console.error("[DigestJob] Lỗi tiến trình gửi Bản tin tổng hợp:", error);
+      if (env.adminChatIds.length > 0) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        for (const adminId of env.adminChatIds) {
+          await bot.api
+            .sendMessage(
+              adminId,
+              `❌ *[DIGEST JOB ERROR]*\nLỗi tiến trình gửi Bản tin tổng hợp.\n\n*Chi tiết lỗi:*\n\`${errMsg}\``,
+              { parse_mode: "Markdown" },
+            )
+            .catch((err) => {
+              console.error(`Không thể gửi báo lỗi đến admin ${adminId}:`, err);
+            });
+        }
+      }
     }
   };
 

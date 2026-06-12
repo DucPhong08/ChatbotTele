@@ -12,7 +12,16 @@ export function startCollectNewsJob(
   cronExpression: string,
   bot: Bot<Context>,
 ): ScheduledTask {
+  let isCollecting = false;
+
   const collect = async (): Promise<void> => {
+    if (isCollecting) {
+      console.warn(
+        "Tiến trình thu thập tin tức đang chạy, bỏ qua lượt quét này để tránh chạy song song.",
+      );
+      return;
+    }
+    isCollecting = true;
     try {
       const newArticles = await collector.collect();
       console.log(
@@ -65,6 +74,22 @@ export function startCollectNewsJob(
       }
     } catch (error) {
       console.error("Tiến trình thu thập tin tức thất bại", error);
+      if (env.adminChatIds.length > 0) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        for (const adminId of env.adminChatIds) {
+          await bot.api
+            .sendMessage(
+              adminId,
+              `❌ *[NEWS CRON ERROR]*\nTiến trình thu thập tin tức tự động thất bại.\n\n*Chi tiết lỗi:*\n\`${errMsg}\``,
+              { parse_mode: "Markdown" },
+            )
+            .catch((err) => {
+              console.error(`Không thể gửi báo lỗi đến admin ${adminId}:`, err);
+            });
+        }
+      }
+    } finally {
+      isCollecting = false;
     }
   };
 
@@ -82,6 +107,20 @@ export function startCollectNewsJob(
       }
     } catch (err) {
       console.error("Lỗi khi kiểm tra số lượng bài viết lúc khởi động:", err);
+      if (env.adminChatIds.length > 0) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        for (const adminId of env.adminChatIds) {
+          await bot.api
+            .sendMessage(
+              adminId,
+              `❌ *[NEWS STARTUP ERROR]*\nLỗi khi kiểm tra số lượng bài viết lúc khởi động.\n\n*Chi tiết lỗi:*\n\`${errMsg}\``,
+              { parse_mode: "Markdown" },
+            )
+            .catch((e) => {
+              console.error(`Không thể gửi báo lỗi đến admin ${adminId}:`, e);
+            });
+        }
+      }
     }
   };
   void runStartupCollect();
