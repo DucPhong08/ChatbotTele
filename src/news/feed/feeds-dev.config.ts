@@ -17,7 +17,7 @@ export const feeds: FeedConfig[] = [
     category: "general",
     skills: ["javascript", "typescript", "web", "backend"],
     quality: "low-signal",
-    minScore: 75,
+    minScore: 83,
   },
   {
     source: "OpenAI News",
@@ -121,7 +121,7 @@ export const feeds: FeedConfig[] = [
     category: "frontend",
     skills: ["frontend", "web", "css", "html", "javascript"],
     quality: "low-signal",
-    minScore: 75,
+    minScore: 83,
   },
   {
     source: "CSS-Tricks",
@@ -129,7 +129,7 @@ export const feeds: FeedConfig[] = [
     category: "frontend",
     skills: ["css", "frontend", "web", "design"],
     quality: "low-signal",
-    minScore: 75,
+    minScore: 83,
   },
   {
     source: "CSS Weekly",
@@ -137,7 +137,7 @@ export const feeds: FeedConfig[] = [
     category: "frontend",
     skills: ["css", "frontend", "web", "design"],
     quality: "low-signal",
-    minScore: 75,
+    minScore: 83,
   },
   {
     source: "JavaScript Weekly",
@@ -145,7 +145,7 @@ export const feeds: FeedConfig[] = [
     category: "frontend",
     skills: ["javascript", "typescript", "web"],
     quality: "low-signal",
-    minScore: 75,
+    minScore: 83,
   },
   {
     source: "Node Weekly",
@@ -153,7 +153,7 @@ export const feeds: FeedConfig[] = [
     category: "backend",
     skills: ["nodejs", "javascript", "backend"],
     quality: "low-signal",
-    minScore: 75,
+    minScore: 83,
   },
 
   // DevOps / Cloud / Edge

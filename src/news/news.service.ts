@@ -1,8 +1,7 @@
 import { isValidObjectId, type PipelineStage } from "mongoose";
 import { NewsModel } from "./news.model";
 import { type CreateNewsInput, type NewsView } from "../types/news";
-
-const MIN_READABLE_SCORE = 65;
+import { env } from "../config/env";
 
 export class NewsService {
   async createManyIfNotExists(items: CreateNewsInput[]): Promise<number> {
@@ -32,15 +31,15 @@ export class NewsService {
       }
     }
 
-    // Lấy N bài tốt nhất từ MỖI nguồn trong 24h gần nhất để đa dạng hóa
+    // Lấy N bài tốt nhất từ MỖI nguồn trong 7 ngày gần nhất để đa dạng hóa
     const perSourceLimit = Math.max(5, Math.ceil((limit + skip) / 2));
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000); // 48h window
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days window (1 week)
 
     const pipeline: PipelineStage[] = [
       {
         $match: {
           ...matchFilter,
-          importanceScore: { $gte: MIN_READABLE_SCORE },
+          importanceScore: { $gte: env.notificationMinScore },
           publishedAt: { $gte: cutoff },
         },
       },

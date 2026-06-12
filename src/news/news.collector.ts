@@ -78,11 +78,6 @@ const LOG = "[NewsCollector]";
 const FEED_FETCH_COOLDOWN_MS = 3 * 60 * 1000;
 const AI_BATCH_SIZE = 5;
 const SCRAPE_CONCURRENCY = 3;
-const ENGINEERING_MIN_IMPORTANCE_SCORE = 70;
-const LOW_SIGNAL_MIN_IMPORTANCE_SCORE = 75;
-const DISCUSSION_MIN_IMPORTANCE_SCORE = 60;
-const HIGH_CONFIDENCE_SCORE = 80;
-const MIN_DISCUSSION_COMMENTS = 20;
 
 export class NewsCollector {
   private readonly parser = new Parser<RssFeed, RssItem>({
@@ -358,33 +353,11 @@ export class NewsCollector {
       return false;
     }
 
-    const minComments = this.getMinComments(feed);
-    if (
-      minComments !== undefined &&
-      typeof item.commentCount === "number" &&
-      item.commentCount < minComments &&
-      score < HIGH_CONFIDENCE_SCORE
-    ) {
-      console.log(
-        `${LOG} Loại bài "${item.title}" (score=${score}, comments=${item.commentCount}, minComments=${minComments}) - thảo luận còn ít.`,
-      );
-      return false;
-    }
-
     return true;
   }
 
   private getMinScore(feed: FeedDoc): number {
-    if (typeof feed.minScore === "number") return feed.minScore;
-    if (feed.quality === "engineering") return ENGINEERING_MIN_IMPORTANCE_SCORE;
-    if (feed.quality === "discussion") return DISCUSSION_MIN_IMPORTANCE_SCORE;
-    if (feed.quality === "low-signal") return LOW_SIGNAL_MIN_IMPORTANCE_SCORE;
     return env.notificationMinScore;
-  }
-
-  private getMinComments(feed: FeedDoc): number | undefined {
-    if (typeof feed.minComments === "number") return feed.minComments;
-    return feed.quality === "discussion" ? MIN_DISCUSSION_COMMENTS : undefined;
   }
 
   private async filterNewCandidates(candidates: CandidateArticle[]): Promise<CandidateArticle[]> {
