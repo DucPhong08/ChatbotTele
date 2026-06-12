@@ -53,7 +53,7 @@ type ArticleProcessInput = {
 const AI_RETRY_DELAYS_MS = [500, 1500];
 
 // Phương án dự phòng cuối cùng: OpenRouter free model (không cần cấu hình)
-const FREE_FALLBACK_MODEL = "google/gemini-2.5-flash:free";
+const FREE_FALLBACK_MODEL = "openrouter/free";
 const FREE_FALLBACK_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const FREE_FALLBACK_HEADERS = {
   "HTTP-Referer": "https://github.com/DucPhong08/ChatbotTele",
@@ -239,7 +239,14 @@ Text to translate:
 ${text}`;
 
     const providersToTry: AiProvider[] = [];
-    const allProviders: AiProvider[] = ["gemini", "groq", "openai", "openrouter", "cerebras"];
+    const allProviders: AiProvider[] = [
+      "gemini",
+      "groq",
+      "openai",
+      "openrouter",
+      "cerebras",
+      "ollama",
+    ];
     for (const p of allProviders) {
       if (this.isProviderConfigured(p)) {
         providersToTry.push(p);
@@ -291,6 +298,11 @@ ${text}`;
                 url: "https://api.cerebras.ai/v1/chat/completions",
                 key: env.cerebrasApiKey,
                 model: env.cerebrasModel,
+              },
+              ollama: {
+                url: `${env.ollamaBaseUrl.replace(/\/$/, "")}/v1/chat/completions`,
+                key: "ollama-dummy",
+                model: env.ollamaModel,
               },
             };
             const ep = endpoints[provider];
@@ -438,6 +450,17 @@ ${text}`;
               }
             }
             break;
+          case "ollama": {
+            const baseUrl = env.ollamaBaseUrl.replace(/\/$/, "");
+            rawResult = await this.callChatCompletion(
+              `${baseUrl}/v1/chat/completions`,
+              "ollama-dummy",
+              env.ollamaModel,
+              prompt,
+              promptSystem,
+            );
+            break;
+          }
           case "gemini":
           default:
             rawResult = await this.callGeminiBatch(prompt);
@@ -591,6 +614,17 @@ ${text}`;
               },
             );
             break;
+          case "ollama": {
+            const baseUrl = env.ollamaBaseUrl.replace(/\/$/, "");
+            rawResult = await this.callChatCompletion(
+              `${baseUrl}/v1/chat/completions`,
+              "ollama-dummy",
+              env.ollamaModel,
+              prompt,
+              systemPrompt,
+            );
+            break;
+          }
           case "gemini":
           default:
             rawResult = await this.callGeminiBatch(`${systemPrompt}\n\n${prompt}`);
@@ -791,6 +825,17 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
               },
             );
             break;
+          case "ollama": {
+            const baseUrl = env.ollamaBaseUrl.replace(/\/$/, "");
+            rawResult = await this.callChatCompletion(
+              `${baseUrl}/v1/chat/completions`,
+              "ollama-dummy",
+              env.ollamaModel,
+              prompt,
+              systemPrompt,
+            );
+            break;
+          }
           case "gemini":
           default:
             rawResult = await this.callGeminiBatch(`${systemPrompt}\n\nCandidate list:\n${prompt}`);
@@ -863,6 +908,8 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
         return !!env.openrouterApiKey;
       case "cerebras":
         return !!env.cerebrasApiKey;
+      case "ollama":
+        return !!env.ollamaBaseUrl;
       default:
         return false;
     }
@@ -876,6 +923,7 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
       "openai",
       "groq",
       "cerebras",
+      "ollama",
     ];
     const seen = new Set<AiProvider>();
 
@@ -955,7 +1003,7 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
         ...FREE_FALLBACK_HEADERS,
       },
       body: JSON.stringify({
-        model: FREE_FALLBACK_MODEL,
+        model: env.openrouterFallbackModel || FREE_FALLBACK_MODEL,
         messages: [
           { role: "system", content: TECH_NEWS_PROMPT },
           { role: "user", content: this.buildArticlePrompt(title, content, source, url) },
@@ -1003,6 +1051,8 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
         return this.processWithOpenRouter(title, content, source, url, publishedAt);
       case "cerebras":
         return this.processWithCerebras(title, content, source, url, publishedAt);
+      case "ollama":
+        return this.processWithOllama(title, content, source, url, publishedAt);
       case "gemini":
       default:
         return this.processWithGemini(title, content, source, url, publishedAt);
@@ -1073,6 +1123,16 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
 
           throw error;
         }
+      case "ollama": {
+        const baseUrl = env.ollamaBaseUrl.replace(/\/$/, "");
+        return this.callChatCompletion(
+          `${baseUrl}/v1/chat/completions`,
+          "ollama-dummy",
+          env.ollamaModel,
+          batchPrompt,
+          TECH_NEWS_PROMPT,
+        );
+      }
       case "gemini":
       default:
         return this.callGeminiBatch(batchPrompt);
@@ -1119,13 +1179,35 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
       }
     }
 
-    // Phương án dự phòng cuối: thử OpenRouter free model
+    // 1. Thử phương án dự phòng bằng Groq Cloud (Free Plan)
+    if (env.groqApiKey && !providersToTry.includes("groq")) {
+      try {
+        const fallbackModel = env.groqModel || "llama-3.3-70b-versatile";
+        console.log(`[AI Failover] Thử phương án dự phòng bằng Groq Cloud (${fallbackModel})`);
+        const result = await this.withAiRetry("groq fallback", () =>
+          this.processWithProvider("groq", title, content, source, url, publishedAt),
+        );
+        console.log("[AI Failover] Xử lý thành công bằng Groq Cloud fallback.");
+        return {
+          ...result,
+          titleVi: this.normalizeDevTerms(result.titleVi),
+          titleEn: this.normalizeDevTerms(result.titleEn),
+          summaryVi: this.normalizeDevTerms(result.summaryVi),
+          summaryEn: this.normalizeDevTerms(result.summaryEn),
+          importanceReasonVi: this.normalizeDevTerms(result.importanceReasonVi),
+          importanceReasonEn: this.normalizeDevTerms(result.importanceReasonEn),
+        };
+      } catch (groqError) {
+        console.warn("[AI Failover] Groq Cloud fallback thất bại: " + (groqError as Error).message);
+      }
+    }
+
+    // 2. Thử phương án dự phòng cuối: OpenRouter free model
     if (env.openrouterApiKey) {
       try {
+        const fallbackModel = env.openrouterFallbackModel || FREE_FALLBACK_MODEL;
         console.log(
-          "[AI Failover] Thử phương án dự phòng cuối: OpenRouter free (" +
-            FREE_FALLBACK_MODEL +
-            ")",
+          "[AI Failover] Thử phương án dự phòng cuối: OpenRouter free (" + fallbackModel + ")",
         );
         const result = await this.processWithOpenRouterFree(
           title,
@@ -1186,6 +1268,29 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
 
     for (const provider of providersToTry) {
       try {
+        if (provider === "ollama") {
+          console.log(
+            "[AI Batch] Ollama là local provider, xử lý tuần tự từng bài riêng lẻ để tránh quá tải CPU và timeout HTTP socket.",
+          );
+          const results: AIProcessedResult[] = [];
+          for (const article of articles) {
+            const res = await this.withAiRetry(
+              `ollama article (${article.title.slice(0, 30)})`,
+              () =>
+                this.processWithOllama(
+                  article.title,
+                  article.content,
+                  article.source,
+                  article.url,
+                  article.publishedAt,
+                ),
+            );
+            results.push(res);
+          }
+          console.log("[AI Batch] Ollama xử lý thành công tất cả bài viết.");
+          return results;
+        }
+
         console.log("[AI Batch] Đang gửi batch " + articles.length + " bài tới: " + provider);
         const rawResult = await this.withAiRetry(provider + " batch", () =>
           this.callBatchProvider(provider, batchPrompt),
@@ -1209,16 +1314,45 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
       }
     }
 
-    // Phương án dự phòng cuối: thử OpenRouter free model
+    // 1. Thử phương án dự phòng bằng Groq Cloud (Free Plan)
+    if (env.groqApiKey && !providersToTry.includes("groq")) {
+      try {
+        const fallbackModel = env.groqModel || "llama-3.3-70b-versatile";
+        console.log(`[AI Batch] Thử phương án dự phòng bằng Groq Cloud (${fallbackModel})`);
+        const rawResult = await this.withAiRetry("groq batch fallback", () =>
+          this.callBatchProvider("groq", batchPrompt),
+        );
+        const parsed = await this.parseBatchResult(rawResult, articles);
+        if (parsed) {
+          console.log("[AI Batch] Groq Cloud batch fallback xử lý thành công.");
+          return parsed.map((result) => ({
+            ...result,
+            titleVi: this.normalizeDevTerms(result.titleVi),
+            titleEn: this.normalizeDevTerms(result.titleEn),
+            summaryVi: this.normalizeDevTerms(result.summaryVi),
+            summaryEn: this.normalizeDevTerms(result.summaryEn),
+            importanceReasonVi: this.normalizeDevTerms(result.importanceReasonVi),
+            importanceReasonEn: this.normalizeDevTerms(result.importanceReasonEn),
+          }));
+        }
+      } catch (groqError) {
+        console.warn(
+          "[AI Batch] Groq Cloud batch fallback thất bại: " + (groqError as Error).message,
+        );
+      }
+    }
+
+    // 2. Thử phương án dự phòng cuối: OpenRouter free model
     if (env.openrouterApiKey) {
       try {
+        const fallbackModel = env.openrouterFallbackModel || FREE_FALLBACK_MODEL;
         console.log(
-          "[AI Batch] Thử phương án dự phòng cuối: OpenRouter free (" + FREE_FALLBACK_MODEL + ")",
+          "[AI Batch] Thử phương án dự phòng cuối: OpenRouter free (" + fallbackModel + ")",
         );
         const rawResult = await this.callChatCompletion(
           FREE_FALLBACK_ENDPOINT,
           env.openrouterApiKey,
-          FREE_FALLBACK_MODEL,
+          fallbackModel,
           batchPrompt,
           TECH_NEWS_PROMPT,
           FREE_FALLBACK_HEADERS,
@@ -1297,7 +1431,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
           temperature: 0.3,
         }),
       },
-      8000,
+      endpoint.includes("127.0.0.1") || endpoint.includes("localhost") ? 120000 : 8000,
     );
 
     if (!response.ok) {
@@ -1545,6 +1679,66 @@ ${JSON.stringify(articlesJson, null, 2)}`;
       return await this.validateAndNormalizeResult(result, title, content, source, publishedAt);
     } catch (error) {
       console.error(`Lỗi khi xử lý bài viết bằng OpenAI (${env.openaiModel}):`, error);
+      throw error;
+    }
+  }
+
+  private static async processWithOllama(
+    title: string,
+    content: string,
+    source: string,
+    url: string,
+    publishedAt: Date,
+  ): Promise<AIProcessedResult> {
+    if (!env.ollamaBaseUrl) {
+      throw new Error("OLLAMA_BASE_URL chưa được cấu hình.");
+    }
+
+    try {
+      const baseUrl = env.ollamaBaseUrl.replace(/\/$/, "");
+      const response = await this.fetchWithTimeout(
+        `${baseUrl}/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: env.ollamaModel,
+            messages: [
+              {
+                role: "system",
+                content: TECH_NEWS_PROMPT,
+              },
+              {
+                role: "user",
+                content: JSON.stringify({ title, content, source, url }),
+              },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+          }),
+        },
+        120000,
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Ollama API returned status ${response.status}: ${errText}`);
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const choiceContent = data.choices?.[0]?.message?.content;
+      if (!choiceContent) {
+        throw new Error("Không nhận được nội dung từ Ollama API.");
+      }
+
+      const result = JSON.parse(choiceContent) as unknown;
+      return await this.validateAndNormalizeResult(result, title, content, source, publishedAt);
+    } catch (error) {
+      console.error(`Lỗi khi xử lý bài viết bằng Ollama (${env.ollamaModel}):`, error);
       throw error;
     }
   }
