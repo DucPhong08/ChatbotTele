@@ -1,4 +1,5 @@
 import Parser from "rss-parser";
+import { Agent } from "undici";
 import { NewsService } from "./news.service";
 import { type CreateNewsInput, type NewsView } from "../types/news";
 import { type FeedQuality } from "../types/feed";
@@ -13,11 +14,18 @@ import { scrapeArticleContent } from "../utils/scraper";
 const FETCH_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+const customAgent = new Agent({
+  connect: {
+    rejectUnauthorized: false,
+  },
+});
+
 async function fetchUrl(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: { "User-Agent": FETCH_USER_AGENT },
     signal: AbortSignal.timeout(15_000),
-  });
+    dispatcher: customAgent,
+  } as any);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} khi tải ${url}`);
   }

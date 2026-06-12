@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { Agent } from "undici";
 
 type ScrapeArticleOptions = {
   timeoutMs?: number;
@@ -9,6 +10,12 @@ type ScrapeArticleOptions = {
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+const customAgent = new Agent({
+  connect: {
+    rejectUnauthorized: false,
+  },
+});
 
 const DEFAULT_OPTIONS: Required<ScrapeArticleOptions> = {
   timeoutMs: 8000,
@@ -88,7 +95,8 @@ async function fetchHtml(url: string, timeoutMs: number): Promise<string> {
         "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
       },
       signal: controller.signal,
-    });
+      dispatcher: customAgent,
+    } as any);
 
     if (!response.ok) {
       throw new Error(`HTTP error: ${response.status}`);
