@@ -296,34 +296,58 @@ export class NewsCollector {
     targetUrl: string,
     seenUrls: Set<string>,
   ): Promise<CandidateArticle[]> {
-    let listing: RedditListing;
     try {
       const raw = await fetchUrl(this.toRedditJsonUrl(targetUrl));
-      listing = JSON.parse(raw) as RedditListing;
+      const listing = JSON.parse(raw) as RedditListing;
+      return (listing.data?.children ?? [])
+        .map((child) => {
+          const post = child.data;
+          const title = post?.title?.trim();
+          const url =
+            this.normalizeUrl(post?.url) ||
+            this.normalizeUrl(post?.permalink ? "https://www.reddit.com" + post.permalink : "");
+
+          if (!title || !url || seenUrls.has(url)) return null;
+          seenUrls.add(url);
+          return {
+            title,
+            url,
+            content: post?.selftext?.trim() || "",
+            publishedAt: this.parseUnixDate(post?.created_utc),
+            commentCount: this.normalizeCount(post?.num_comments),
+          };
+        })
+        .filter((item): item is CandidateArticle => item !== null);
     } catch (error) {
-      console.error(`${LOG} Lỗi khi tải/parse JSON từ Reddit (${targetUrl}):`, error);
+      console.warn(
+        `${LOG} Lỗi khi tải JSON Reddit trực tiếp (${targetUrl}), thử qua RSS2JSON fallback... Chi tiết: ${(error as Error).message}`,
+      );
+      try {
+        const fallbackUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(targetUrl)}`;
+        const raw = await fetchUrl(fallbackUrl);
+        const rssData = JSON.parse(raw);
+        if (rssData.status === "ok" && Array.isArray(rssData.items)) {
+          return rssData.items
+            .map((item: any) => {
+              const title = item.title?.trim();
+              const url = this.normalizeUrl(item.link);
+              if (!title || !url || seenUrls.has(url)) return null;
+              seenUrls.add(url);
+              return {
+                title,
+                url,
+                content: item.content || item.description || "",
+                publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
+                commentCount: 0,
+              };
+            })
+            .filter((item: any): item is CandidateArticle => item !== null);
+        }
+      } catch (fallbackError) {
+        console.error(`${LOG} Fallback RSS2JSON cũng thất bại cho ${targetUrl}:`, fallbackError);
+      }
       return [];
     }
-
-    return (listing.data?.children ?? [])
-      .map((child) => {
-        const post = child.data;
-        const title = post?.title?.trim();
-        const url =
-          this.normalizeUrl(post?.url) ||
-          this.normalizeUrl(post?.permalink ? "https://www.reddit.com" + post.permalink : "");
-
-        if (!title || !url || seenUrls.has(url)) return null;
-        seenUrls.add(url);
-        return {
-          title,
-          url,
-          content: post?.selftext?.trim() || "",
-          publishedAt: this.parseUnixDate(post?.created_utc),
-          commentCount: this.normalizeCount(post?.num_comments),
-        };
-      })
-      .filter((item): item is CandidateArticle => item !== null);
   }
 
   private toRedditJsonUrl(targetUrl: string): string {
