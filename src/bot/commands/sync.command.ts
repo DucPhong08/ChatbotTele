@@ -32,7 +32,7 @@ export function registerSyncCommand(bot: Bot<Context>, collector: NewsCollector)
     console.log("[SyncCommand] Đang tiến hành thu thập tin tức mới bằng AI...");
 
     try {
-      const newArticles = await collector.collect({});
+      const newArticles = await collector.collect({ force: false });
 
       if (newArticles.length === 0) {
         console.log("[SyncCommand] Đã hoàn tất kiểm tra. Không có tin tức mới nào.");
