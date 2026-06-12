@@ -239,7 +239,7 @@ Text to translate:
 ${text}`;
 
     const providersToTry: AiProvider[] = [];
-    const allProviders: AiProvider[] = ["gemini", "groq", "openai", "openrouter"];
+    const allProviders: AiProvider[] = ["gemini", "groq", "openai", "openrouter", "cerebras"];
     for (const p of allProviders) {
       if (this.isProviderConfigured(p)) {
         providersToTry.push(p);
@@ -286,6 +286,11 @@ ${text}`;
                 url: "https://openrouter.ai/api/v1/chat/completions",
                 key: env.openrouterApiKey,
                 model: env.openrouterModel,
+              },
+              cerebras: {
+                url: "https://api.cerebras.ai/v1/chat/completions",
+                key: env.cerebrasApiKey,
+                model: env.cerebrasModel,
               },
             };
             const ep = endpoints[provider];
@@ -383,6 +388,15 @@ ${text}`;
               "https://api.groq.com/openai/v1/chat/completions",
               env.groqApiKey,
               env.groqModel,
+              prompt,
+              promptSystem,
+            );
+            break;
+          case "cerebras":
+            rawResult = await this.callChatCompletion(
+              "https://api.cerebras.ai/v1/chat/completions",
+              env.cerebrasApiKey,
+              env.cerebrasModel,
               prompt,
               promptSystem,
             );
@@ -551,6 +565,15 @@ ${text}`;
               "https://api.groq.com/openai/v1/chat/completions",
               env.groqApiKey,
               env.groqModel,
+              prompt,
+              systemPrompt,
+            );
+            break;
+          case "cerebras":
+            rawResult = await this.callChatCompletion(
+              "https://api.cerebras.ai/v1/chat/completions",
+              env.cerebrasApiKey,
+              env.cerebrasModel,
               prompt,
               systemPrompt,
             );
@@ -746,6 +769,15 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
               systemPrompt,
             );
             break;
+          case "cerebras":
+            rawResult = await this.callChatCompletion(
+              "https://api.cerebras.ai/v1/chat/completions",
+              env.cerebrasApiKey,
+              env.cerebrasModel,
+              prompt,
+              systemPrompt,
+            );
+            break;
           case "openrouter":
             rawResult = await this.callChatCompletion(
               "https://openrouter.ai/api/v1/chat/completions",
@@ -828,13 +860,22 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
         return !!env.groqApiKey;
       case "openrouter":
         return !!env.openrouterApiKey;
+      case "cerebras":
+        return !!env.cerebrasApiKey;
       default:
         return false;
     }
   }
 
   private static getProvidersToTry(): AiProvider[] {
-    const ordered: AiProvider[] = [env.aiProvider, "gemini", "openai", "groq", "openrouter"];
+    const ordered: AiProvider[] = [
+      env.aiProvider,
+      "openrouter",
+      "gemini",
+      "openai",
+      "groq",
+      "cerebras",
+    ];
     const seen = new Set<AiProvider>();
 
     return ordered.filter((provider) => {
@@ -959,6 +1000,8 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
         return this.processWithGroq(title, content, source, url, publishedAt);
       case "openrouter":
         return this.processWithOpenRouter(title, content, source, url, publishedAt);
+      case "cerebras":
+        return this.processWithCerebras(title, content, source, url, publishedAt);
       case "gemini":
       default:
         return this.processWithGemini(title, content, source, url, publishedAt);
@@ -982,6 +1025,13 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
           "https://api.groq.com/openai/v1/chat/completions",
           env.groqApiKey,
           env.groqModel,
+          batchPrompt,
+        );
+      case "cerebras":
+        return this.callChatCompletion(
+          "https://api.cerebras.ai/v1/chat/completions",
+          env.cerebrasApiKey,
+          env.cerebrasModel,
           batchPrompt,
         );
       case "openrouter":
@@ -1631,6 +1681,27 @@ ${JSON.stringify(articlesJson, null, 2)}`;
           throw fallbackError;
         }
       }
+      throw error;
+    }
+  }
+
+  private static async processWithCerebras(
+    title: string,
+    content: string,
+    source: string,
+    url: string,
+    publishedAt: Date,
+  ): Promise<AIProcessedResult> {
+    try {
+      const rawResult = await this.callChatCompletion(
+        "https://api.cerebras.ai/v1/chat/completions",
+        env.cerebrasApiKey,
+        env.cerebrasModel,
+        this.buildArticlePrompt(title, content, source, url),
+      );
+      return await this.validateAndNormalizeResult(rawResult, title, content, source, publishedAt);
+    } catch (error) {
+      console.error(`Lỗi khi xử lý bài viết bằng Cerebras (${env.cerebrasModel}):`, error);
       throw error;
     }
   }

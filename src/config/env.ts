@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export type TelegramMode = "polling" | "webhook";
-export type AiProvider = "gemini" | "openai" | "groq" | "openrouter";
+export type AiProvider = "gemini" | "openai" | "groq" | "openrouter" | "cerebras";
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -32,9 +32,10 @@ function readAiProvider(): AiProvider {
     provider !== "gemini" &&
     provider !== "openai" &&
     provider !== "groq" &&
-    provider !== "openrouter"
+    provider !== "openrouter" &&
+    provider !== "cerebras"
   ) {
-    throw new Error("AI_PROVIDER phải là gemini, openai, groq hoặc openrouter");
+    throw new Error("AI_PROVIDER phải là gemini, openai, groq, openrouter hoặc cerebras");
   }
 
   return provider;
@@ -107,6 +108,8 @@ export const env = {
   openrouterApiKey: process.env.OPENROUTER_API_KEY?.trim() || "",
   openrouterModel: process.env.OPENROUTER_MODEL?.trim() || "google/gemini-2.5-flash:free",
   openrouterFallbackModel: process.env.OPENROUTER_FALLBACK_MODEL?.trim() || "",
+  cerebrasApiKey: process.env.CEREBRAS_API_KEY?.trim() || "",
+  cerebrasModel: process.env.CEREBRAS_MODEL?.trim() || "gpt-oss-120b",
   rsshubUrl: process.env.RSSHUB_URL?.trim() || "http://localhost:1200",
   feedSource: process.env.FEED_SOURCE?.trim() || "dev",
 };
