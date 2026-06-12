@@ -150,15 +150,17 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
 
       if (latestNews.length === 0) {
         const isAll = categories.includes("all");
-        await ctx.answerCallbackQuery({
-          text: isEn
-            ? isAll
-              ? `No news on Page ${page}.`
-              : `No news in selected categories on Page ${page}.`
-            : isAll
-              ? `Không có tin tức ở Trang ${page}.`
-              : `Không có tin tức thuộc thể loại đã chọn ở Trang ${page}.`,
-        });
+        await ctx
+          .answerCallbackQuery({
+            text: isEn
+              ? isAll
+                ? `No news on Page ${page}.`
+                : `No news in selected categories on Page ${page}.`
+              : isAll
+                ? `Không có tin tức ở Trang ${page}.`
+                : `Không có tin tức thuộc thể loại đã chọn ở Trang ${page}.`,
+          })
+          .catch(() => {});
         return;
       }
 
@@ -169,25 +171,30 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
           reply_markup: buildPaginationKeyboard(page, hasMore, lang),
         },
       );
-      await ctx.answerCallbackQuery();
+      await ctx.answerCallbackQuery().catch(() => {});
     } catch (error) {
       console.error("Lỗi khi chuyển trang tin tức:", error);
-      await ctx.answerCallbackQuery({ text: "Lỗi khi chuyển trang." });
+      await ctx.answerCallbackQuery({ text: "Lỗi khi chuyển trang." }).catch(() => {});
     }
   });
 
   // Xem chi tiết bài viết
   bot.callbackQuery(/detail_(.+)/, async (ctx) => {
     const newsId = ctx.match[1];
+    let lang: "vi" | "en" = "vi";
     try {
       await ctx.replyWithChatAction("typing");
-      const { lang } = await getSubscriberPrefs(ctx.chat?.id);
+      // Trả lời callback query ngay lập tức để tránh spinner timeout
+      await ctx.answerCallbackQuery().catch(() => {});
+
+      const prefs = await getSubscriberPrefs(ctx.chat?.id);
+      lang = prefs.lang;
 
       const item = await newsService.getById(newsId);
       if (!item) {
-        await ctx.answerCallbackQuery({
-          text: lang === "en" ? "Article not found." : "Không tìm thấy bài viết này.",
-        });
+        await ctx
+          .editMessageText(lang === "en" ? "Article not found." : "Không tìm thấy bài viết này.")
+          .catch(() => {});
         return;
       }
 
@@ -275,10 +282,15 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         reply_markup: keyboard,
         link_preview_options: { is_disabled: true },
       });
-      await ctx.answerCallbackQuery();
     } catch (error) {
       console.error("Lỗi khi xem chi tiết tin tức:", error);
-      await ctx.answerCallbackQuery({ text: "Đã xảy ra lỗi khi tải thông tin chi tiết." });
+      await ctx
+        .editMessageText(
+          lang === "en"
+            ? "An error occurred while loading article details."
+            : "Đã xảy ra lỗi khi tải thông tin chi tiết bài viết.",
+        )
+        .catch(() => {});
     }
   });
 
@@ -343,7 +355,33 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         return;
       }
 
-      const articleContent = await fetchArticleContent(item.url);
+      let articleContent = await fetchArticleContent(item.url);
+      if (!articleContent) {
+        // Fallback to database summary/importanceReason if scraping fails
+        const fallbackParts: string[] = [];
+        const titleText = isEn ? item.titleEn || item.title : item.title || item.titleEn;
+        if (titleText) {
+          fallbackParts.push(`Title: ${titleText}`);
+        }
+        const summaryText = isEn ? item.summaryEn || item.summary : item.summary || item.summaryEn;
+        if (summaryText) {
+          fallbackParts.push(`Summary: ${summaryText}`);
+        }
+        const reasonText = isEn
+          ? item.importanceReasonEn || item.importanceReason
+          : item.importanceReason || item.importanceReasonEn;
+        if (reasonText) {
+          fallbackParts.push(`Importance Reason: ${reasonText}`);
+        }
+
+        if (fallbackParts.length > 0) {
+          articleContent = fallbackParts.join("\n\n");
+          console.log(
+            `[Summarize Fallback] Scraper failed for URL: ${item.url}. Using database fields as fallback.`,
+          );
+        }
+      }
+
       if (!articleContent) {
         const keyboard = new InlineKeyboard().text(
           isEn ? "🔙 Back" : "🔙 Quay lại",
@@ -431,10 +469,12 @@ export function registerNewsCommand(bot: Bot<Context>, newsService: NewsService)
         parse_mode: "HTML",
         reply_markup: buildPaginationKeyboard(1, hasMore, lang),
       });
-      await ctx.answerCallbackQuery();
+      await ctx.answerCallbackQuery().catch(() => {});
     } catch (error) {
       console.error("Lỗi khi quay lại danh sách tin tức:", error);
-      await ctx.answerCallbackQuery({ text: "Đã xảy ra lỗi khi quay lại danh sách." });
+      await ctx
+        .answerCallbackQuery({ text: "Đã xảy ra lỗi khi quay lại danh sách." })
+        .catch(() => {});
     }
   });
 }

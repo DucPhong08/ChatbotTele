@@ -61,10 +61,11 @@ Return ONLY a valid JSON object.
 
 {
 "title": "string",
-"keyPoints": ["string"],
-"developerInsight": "string",
-"limitations": "string",
-"rating": 7,
+"summaryPoints": ["string"],
+"whyItMatters": "string",
+"uncertainty": "string",
+"actions": ["string"],
+"readabilityScore": 7,
 "topics": ["string"]
 }
 
@@ -77,7 +78,7 @@ Return ONLY a valid JSON object.
 * Interesting but accurate.
 * Avoid clickbait.
 
-### keyPoints
+### summaryPoints
 
 * 3–5 bullet points.
 * Each bullet should describe a concrete fact.
@@ -90,7 +91,7 @@ Bad:
 Good:
 "Codex was used to generate and test plasma simulation code for Event Horizon Telescope research."
 
-### developerInsight
+### whyItMatters
 
 * Most important field.
 * 2–4 sentences.
@@ -98,41 +99,23 @@ Good:
 * Draw connections to real-world software engineering.
 * Prefer insights over summaries.
 
-Good:
-"Although the project focuses on astrophysics, the interesting part is the workflow. Researchers used AI to accelerate development of scientific simulation software, suggesting a future where AI assists not only CRUD applications but also domain-specific engineering."
-
-Bad:
-"This is useful for developers."
-
-### limitations
+### uncertainty
 
 * Mention missing benchmarks, unclear methodology, marketing bias, missing production evidence, or other gaps.
-* Write "Không có thông tin đáng chú ý." only if nothing meaningful is missing.
+* Write "Không có" only if nothing meaningful is missing.
 
-### rating
+### actions
 
-Integer 1–10.
+* 1–3 concrete, practical recommendations or next steps for developers/engineers.
+* Focus on tools to try, concepts to study, or checks to run in production.
 
-Scoring:
+### readabilityScore
 
-9-10:
-Major industry shift, critical security issue, breakthrough research, significant production lessons.
-
-7-8:
-Strong engineering content, useful architecture lessons, meaningful technical insight.
-
-5-6:
-Interesting but limited practical value.
-
-3-4:
-Mostly marketing, opinion, or surface-level content.
-
-1-2:
-Low signal.
+* Integer 1–10.
 
 ### topics
 
-2-5 lowercase technical tags.
+* 2-5 lowercase technical tags.
 
 ## Hard rules
 
