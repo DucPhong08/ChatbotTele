@@ -2,10 +2,7 @@ import { type Bot, type Context } from "grammy";
 import { NewsModel } from "../../news/news.model";
 import { SubscriberModel } from "../subscriber.model";
 import { env } from "../../config/env";
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+import { escapeHtml } from "../../news/news.formatter";
 
 function isAdmin(chatId: number): boolean {
   return env.adminChatIds.includes(chatId);
@@ -21,6 +18,10 @@ function getActiveAiModel(): string {
       return env.groqModel;
     case "openrouter":
       return env.openrouterModel;
+    case "cerebras":
+      return env.cerebrasModel;
+    case "ollama":
+      return env.ollamaModel;
     default:
       return "Không rõ";
   }
@@ -72,22 +73,22 @@ export function registerStatsCommand(bot: Bot<Context>): void {
       ] = await Promise.all([
         NewsModel.countDocuments(),
         NewsModel.countDocuments({
-          createdAt: { $gte: last24hDate },
+          publishedAt: { $gte: last24hDate },
         }),
         NewsModel.countDocuments({
-          createdAt: { $gte: last7dDate },
+          publishedAt: { $gte: last7dDate },
         }),
         SubscriberModel.countDocuments({
           isActiveAI: { $ne: false },
         }),
         SubscriberModel.countDocuments(),
         NewsModel.findOne()
-          .sort({ createdAt: -1 })
-          .select("title source createdAt")
+          .sort({ publishedAt: -1 })
+          .select("title source publishedAt")
           .lean<{
             title?: string;
             source?: string;
-            createdAt?: Date;
+            publishedAt?: Date;
           }>()
           .exec(),
       ]);
@@ -96,11 +97,17 @@ export function registerStatsCommand(bot: Bot<Context>): void {
       const appEnv = process.env.APP_ENV || "local";
       const uptime = formatUptime(process.uptime());
 
-      const latestArticleText = latestArticle
-        ? `${escapeHtml(latestArticle.title || "Không có tiêu đề")} - ${escapeHtml(
-            latestArticle.source || "Không rõ nguồn",
-          )}`
-        : "Chưa có bài viết";
+      let latestArticleText = "Chưa có bài viết";
+      if (latestArticle) {
+        const dateStr = latestArticle.publishedAt
+          ? new Date(latestArticle.publishedAt).toLocaleString("vi-VN", {
+              timeZone: "Asia/Ho_Chi_Minh",
+            })
+          : "Không rõ ngày";
+        latestArticleText = `${escapeHtml(latestArticle.title || "Không có tiêu đề")} (${escapeHtml(
+          latestArticle.source || "Không rõ nguồn",
+        )} | ${dateStr})`;
+      }
 
       const statsText = [
         "<b>THỐNG KÊ BOT</b>",
