@@ -31,7 +31,7 @@ export class NewsService {
       }
     }
 
-    // Lấy N bài tốt nhất từ MỖI nguồn trong 7 ngày gần nhất để đa dạng hóa
+    // Lấy N bài tốt nhất từ MỖI nguồn trong 7 ngày gần nhất (tính từ lúc lưu vào DB) để đa dạng hóa
     const perSourceLimit = Math.max(5, Math.ceil((limit + skip) / 2));
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days window (1 week)
 
@@ -40,7 +40,7 @@ export class NewsService {
         $match: {
           ...matchFilter,
           importanceScore: { $gte: env.notificationMinScore },
-          publishedAt: { $gte: cutoff },
+          createdAt: { $gte: cutoff },
         },
       },
       {
