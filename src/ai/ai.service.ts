@@ -885,10 +885,9 @@ Return ONLY a valid JSON object: {"indices": [0, 2]}`;
       ? this.truncate(cleanContent, 350)
       : "No detailed description available.";
 
-    const [titleVi, translatedSummary] = await Promise.all([
-      this.translateWithGoogle(title),
-      this.translateWithGoogle(summarySeed),
-    ]);
+    const titleVi = await this.translateWithGoogle(title);
+    await this.sleep(150);
+    const translatedSummary = await this.translateWithGoogle(summarySeed);
 
     return {
       titleVi: titleVi || title,
@@ -1271,11 +1270,19 @@ Return ONLY a valid JSON object: {"indices": [0, 2]}`;
 
     if (providersToTry.length === 0) {
       console.warn("[AI Batch] Chưa cấu hình provider AI. Sử dụng rule-based fallback.");
-      return Promise.all(
-        articles.map((article) =>
-          this.getFallback(article.title, article.content, article.source, article.publishedAt),
-        ),
-      );
+      const results: AIProcessedResult[] = [];
+      for (const article of articles) {
+        results.push(
+          await this.getFallback(
+            article.title,
+            article.content,
+            article.source,
+            article.publishedAt,
+          ),
+        );
+        await this.sleep(200);
+      }
+      return results;
     }
 
     console.log(
@@ -1395,11 +1402,14 @@ Return ONLY a valid JSON object: {"indices": [0, 2]}`;
     }
 
     console.warn("[AI Batch] Tất cả đều thất bại. Sử dụng rule-based fallback.");
-    return Promise.all(
-      articles.map((article) =>
-        this.getFallback(article.title, article.content, article.source, article.publishedAt),
-      ),
-    );
+    const results: AIProcessedResult[] = [];
+    for (const article of articles) {
+      results.push(
+        await this.getFallback(article.title, article.content, article.source, article.publishedAt),
+      );
+      await this.sleep(200);
+    }
+    return results;
   }
 
   private static buildBatchPrompt(articles: ArticleProcessInput[]): string {
