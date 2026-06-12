@@ -257,12 +257,12 @@ async function sendDigestSubmenu(ctx: Context, sub: any, isEdit = false): Promis
     ? `<b>📬 DAILY NEWS DIGEST SETTINGS</b>\n` +
       `────────────────\n` +
       `• <b>Status:</b> ${digestMode ? "🟢 Enabled (Once a day)" : "🔴 Disabled (Real-time notifications)"}\n` +
-      `• <b>Time:</b> ${digestTime}\n\n` +
+      `• <b>Time:</b> ${digestMode ? digestTime : "N/A (Real-time)"}\n\n` +
       `<i>In digest mode, bot will group all top stories and send one daily summary message.</i>`
     : `<b>📬 CẤU HÌNH BẢN TIN TỔNG HỢP (DIGEST)</b>\n` +
       `────────────────\n` +
       `• <b>Trạng thái:</b> ${digestMode ? "🟢 Đang bật (1 lần/ngày)" : "🔴 Đang tắt (Nhận tin tức thì)"}\n` +
-      `• <b>Giờ gửi tin:</b> ${digestTime}\n\n` +
+      `• <b>Giờ gửi tin:</b> ${digestMode ? digestTime : "Không áp dụng (Nhận tin tức thì)"}\n\n` +
       `<i>Khi bật digest, bot sẽ tổng hợp top tin tức và gửi 1 lần duy nhất vào khung giờ bạn chọn.</i>`;
 
   const keyboard = new InlineKeyboard();
