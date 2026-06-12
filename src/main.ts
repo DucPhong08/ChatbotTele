@@ -14,6 +14,28 @@ async function bootstrap(): Promise<void> {
   const newsCollector = new NewsCollector(newsService);
   const bot = createBot(newsService, newsCollector);
 
+  // Khởi tạo thông tin bot để bot.botInfo khả dụng cho các jobs
+  try {
+    await bot.init();
+    console.log(`Telegram bot đã khởi động với tên @${bot.botInfo.username}`);
+  } catch (error) {
+    console.error("Cảnh báo: Không thể khởi tạo Telegram bot lúc khởi động:", error);
+    if (env.adminChatIds.length > 0) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      for (const adminId of env.adminChatIds) {
+        await bot.api
+          .sendMessage(
+            adminId,
+            `❌ *[STARTUP ERROR]*\nKhông thể khởi tạo Telegram bot lúc khởi động.\n\n*Chi tiết lỗi:*\n\`${errMsg}\``,
+            { parse_mode: "Markdown" },
+          )
+          .catch((err) => {
+            console.error(`Không thể gửi báo lỗi khởi động đến admin ${adminId}:`, err);
+          });
+      }
+    }
+  }
+
   const collectNewsJob = startCollectNewsJob(newsCollector, env.newsCron, bot);
   const digestJob = startDigestJob(bot);
   const server = createFastifyServer(bot, env.telegramMode);

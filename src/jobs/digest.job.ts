@@ -46,14 +46,12 @@ export function startDigestJob(bot: Bot<Context>, cronExpression = "0 * * * *"):
       const topArticles = sortedArticles.slice(0, 10);
 
       // Lấy username của bot
-      let botUsername = bot.botInfo?.username;
-      if (!botUsername) {
-        try {
-          const me = await bot.api.getMe();
-          botUsername = me.username;
-        } catch (err) {
-          botUsername = "";
-        }
+      let botUsername = "";
+      if (bot.isInited()) {
+        botUsername = bot.botInfo.username;
+      } else {
+        await bot.init();
+        botUsername = bot.botInfo.username;
       }
 
       // 3. Gọi broadcaster để gửi tin tức cho các user có digestMode = true và digestTime khớp giờ hiện tại

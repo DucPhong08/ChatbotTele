@@ -53,15 +53,12 @@ export function startCollectNewsJob(
         const topNew = sortedNew.slice(0, 10);
 
         // Lấy thông tin username của bot nếu chưa có
-        let botUsername = bot.botInfo?.username;
-        if (!botUsername) {
-          try {
-            const me = await bot.api.getMe();
-            botUsername = me.username;
-          } catch (err) {
-            console.warn("Không thể lấy username bot:", err);
-            botUsername = "";
-          }
+        let botUsername = "";
+        if (bot.isInited()) {
+          botUsername = bot.botInfo.username;
+        } else {
+          await bot.init();
+          botUsername = bot.botInfo.username;
         }
 
         // Gọi helper broadcastToSubscribers để gửi tin an toàn (chống Rate Limit) cho người nhận Real-time
