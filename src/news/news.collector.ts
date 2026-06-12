@@ -119,21 +119,22 @@ export class NewsCollector {
 
       // Lọc sơ bộ bằng rule-based score để tránh quá tải AI
       const filteredItems = items.filter((item) => {
-        // Nếu nguồn tin là chính thống (official) hoặc kỹ thuật (engineering), luôn giữ lại để AI phân tích
-        if (feed.quality === "official" || feed.quality === "engineering") {
-          return true;
-        }
-
         const metadata = AIService.inferArticleMetadata(
           item.title,
           item.content,
           feed.source,
           item.publishedAt,
         );
-        const isRelevant = metadata.importanceScore >= 40 || metadata.category !== "other";
+
+        // Official/Engineering có độ tin cậy cao hơn, nhưng vẫn lọc các bài ít liên quan (score < 45)
+        const isOfficialOrEng = feed.quality === "official" || feed.quality === "engineering";
+        const minScore = isOfficialOrEng ? 45 : 55;
+
+        // Chỉ gửi đến AI các bài viết thuộc các thể loại trọng tâm và đạt điểm tối thiểu
+        const isRelevant = metadata.importanceScore >= minScore && metadata.category !== "other";
         if (!isRelevant) {
           console.log(
-            `${LOG} [Pre-filter] Bỏ qua bài viết không liên quan: "${item.title}" (score=${metadata.importanceScore}, cat=${metadata.category})`,
+            `${LOG} [Pre-filter] Bỏ qua bài viết: "${item.title}" (score=${metadata.importanceScore}, cat=${metadata.category})`,
           );
         }
         return isRelevant;
@@ -162,28 +163,36 @@ export class NewsCollector {
     seenUrls: Set<string>,
     force = false,
   ): Promise<CandidateArticle[]> {
-    if (this.shouldSkipFeed(feed.url, feed.source, force)) return [];
+    try {
+      if (this.shouldSkipFeed(feed.url, feed.source, force)) return [];
 
-    let targetUrl = feed.url;
-    if (targetUrl.includes("reddit.com")) {
-      if (
-        !targetUrl.includes("/hot") &&
-        !targetUrl.includes("/top") &&
-        !targetUrl.includes("/new")
-      ) {
-        targetUrl = targetUrl.replace(/\/\.rss$/, "").replace(/\/$/, "") + "/hot/.rss";
+      let targetUrl = feed.url;
+      if (targetUrl.includes("reddit.com")) {
+        if (
+          !targetUrl.includes("/hot") &&
+          !targetUrl.includes("/top") &&
+          !targetUrl.includes("/new")
+        ) {
+          targetUrl = targetUrl.replace(/\/\.rss$/, "").replace(/\/$/, "") + "/hot/.rss";
+        }
+
+        const candidates = await this.fetchRedditCandidates(targetUrl, seenUrls);
+        this.lastFetchTimes.set(feed.url, Date.now());
+        return this.filterNewCandidates(candidates);
       }
 
-      const candidates = await this.fetchRedditCandidates(targetUrl, seenUrls);
+      const parsedFeed = await this.parser.parseURL(targetUrl);
       this.lastFetchTimes.set(feed.url, Date.now());
-      return this.filterNewCandidates(candidates);
+
+      const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
+      return candidates.length === 0 ? [] : this.filterNewCandidates(candidates);
+    } catch (error: any) {
+      console.warn(
+        `${LOG} Thất bại khi tải nguồn "${feed.source}" (${feed.url}):`,
+        error?.message || error,
+      );
+      return [];
     }
-
-    const parsedFeed = await this.parser.parseURL(targetUrl);
-    this.lastFetchTimes.set(feed.url, Date.now());
-
-    const candidates = this.extractCandidates(parsedFeed.items, seenUrls);
-    return candidates.length === 0 ? [] : this.filterNewCandidates(candidates);
   }
 
   private async processFeedItems(

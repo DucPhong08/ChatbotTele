@@ -767,11 +767,11 @@ ${text}`;
     const systemPrompt = `You are a helpful assistant filtering tech articles based on user preferences.
 The user's preference prompt is: "${userPrompt}"
 Below is a list of candidate articles in JSON format.
-Your job is to return a JSON array containing the indices (0-based) of the articles that are relevant or interesting according to the user's prompt, sorted from most relevant to least relevant.
-If no articles are relevant, return an empty array [].
+Your job is to return a JSON object with a key "indices" containing the indices (0-based) of the articles that are relevant or interesting according to the user's prompt, sorted from most relevant to least relevant.
+If no articles are relevant, return {"indices": []}.
 If all are relevant, return all indices, sorted by relevance.
 
-Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown code fences, comments, or extra text.`;
+Return ONLY a valid JSON object: {"indices": [0, 2]}`;
 
     const prompt = JSON.stringify(candidateList, null, 2);
 
@@ -843,17 +843,26 @@ Return ONLY a valid JSON array of numbers, e.g. [0, 2]. Do not include markdown 
         }
 
         // Kiểm tra xem kết quả trả về có phải là mảng chỉ số hợp lệ không
+        let matched: number[] = [];
         if (Array.isArray(rawResult)) {
-          const matchedIndices = rawResult
-            .map((item) => Number(item))
-            .filter((idx) => !isNaN(idx) && idx >= 0 && idx < articles.length);
+          matched = rawResult.map(Number);
+        } else if (
+          rawResult &&
+          typeof rawResult === "object" &&
+          Array.isArray((rawResult as any).indices)
+        ) {
+          matched = (rawResult as any).indices.map(Number);
+        }
 
-          if (matchedIndices.length > 0) {
-            console.log(
-              `[FilterArticles] AI tìm thấy ${matchedIndices.length}/${articles.length} bài viết phù hợp với prompt: "${userPrompt}"`,
-            );
-            return matchedIndices.map((idx) => articles[idx]);
-          }
+        const matchedIndices = matched.filter(
+          (idx) => !isNaN(idx) && idx >= 0 && idx < articles.length,
+        );
+
+        if (matchedIndices.length > 0) {
+          console.log(
+            `[FilterArticles] AI tìm thấy ${matchedIndices.length}/${articles.length} bài viết phù hợp với prompt: "${userPrompt}"`,
+          );
+          return matchedIndices.map((idx) => articles[idx]);
         }
       } catch (error) {
         console.warn(`[FilterArticles] Thất bại với ${provider}:`, (error as Error).message);
