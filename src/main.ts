@@ -1,3 +1,5 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 import { createBot } from "./bot/bot";
 import { env } from "./config/env";
 import { connectMongo, disconnectMongo } from "./db/mongo";
