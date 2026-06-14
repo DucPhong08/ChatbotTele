@@ -51,23 +51,6 @@ export const feeds: FeedConfig[] = [
     quality: "engineering",
     minScore: 70,
   },
-  // [+] AI engineering / tooling
-  {
-    source: "Weights & Biases Blog",
-    url: "https://wandb.ai/fully-connected/rss.xml",
-    category: "ai",
-    skills: ["ai", "mlops", "experiment-tracking", "machine-learning"],
-    quality: "engineering",
-    minScore: 65,
-  },
-  {
-    source: "LlamaIndex Blog",
-    url: "https://medium.com/feed/llamaindex-blog",
-    category: "ai",
-    skills: ["llm", "rag", "agents", "ai-engineering"],
-    quality: "engineering",
-    minScore: 65,
-  },
   // Arxiv CS.AI: feed cực kỳ noisy (100+ paper/ngày). minScore 85 để chỉ lấy
   // những paper được HN/cộng đồng chú ý nhiều. Theo dõi sát tuần đầu sau deploy.
   {
@@ -149,7 +132,7 @@ export const feeds: FeedConfig[] = [
     category: "general",
     skills: ["github", "open-source", "developer-tools"],
     quality: "engineering",
-    minScore: 70,
+    minScore: 65,
   },
   {
     source: "GitHub Engineering",
@@ -157,21 +140,13 @@ export const feeds: FeedConfig[] = [
     category: "backend",
     skills: ["architecture", "developer-tools"],
     quality: "engineering",
-    minScore: 70,
+    minScore: 65,
   },
   {
     source: "InfoQ Architecture",
     url: "https://feed.infoq.com/architecture",
     category: "backend",
     skills: ["architecture", "system-design"],
-    quality: "engineering",
-    minScore: 70,
-  },
-  {
-    source: "Netflix TechBlog",
-    url: "https://netflixtechblog.com/feed",
-    category: "backend",
-    skills: ["distributed-systems", "performance"],
     quality: "engineering",
     minScore: 70,
   },
@@ -310,15 +285,6 @@ export const feeds: FeedConfig[] = [
     sourceBoost: 20,
   },
   {
-    source: "Flutter Blog",
-    url: "https://medium.com/flutter/feed",
-    category: "mobile",
-    skills: ["flutter", "dart", "mobile", "cross-platform"],
-    quality: "official",
-    minScore: 65,
-    sourceBoost: 20,
-  },
-  {
     source: "Reddit iOSProgramming",
     url: "https://www.reddit.com/r/iOSProgramming/hot/.rss",
     category: "mobile",
@@ -396,14 +362,6 @@ export const feeds: FeedConfig[] = [
     skills: ["security", "cryptography", "privacy", "policy"],
     quality: "engineering",
     minScore: 70,
-  },
-  {
-    source: "CISA Advisories",
-    url: "https://www.cisa.gov/uscert/ncas/alerts.xml",
-    category: "security",
-    skills: ["security", "vulnerability", "cve", "advisory"],
-    quality: "official",
-    minScore: 75,
   },
 
   // ===== Linux / VPS =====
@@ -566,15 +524,6 @@ export const feeds: FeedConfig[] = [
     url: "https://blog.vuejs.org/feed.rss",
     category: "frontend",
     skills: ["vue", "frontend", "javascript"],
-    quality: "official",
-    minScore: 70,
-    sourceBoost: 20,
-  },
-  {
-    source: "Angular Blog",
-    url: "https://blog.angular.dev/feed",
-    category: "frontend",
-    skills: ["angular", "typescript", "frontend"],
     quality: "official",
     minScore: 70,
     sourceBoost: 20,

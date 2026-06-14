@@ -47,7 +47,7 @@ type FeedDoc = {
 
 const LOG = "[NewsCollector]";
 const FEED_FETCH_COOLDOWN_MS = 3 * 60 * 1000;
-const FEED_FETCH_TIMEOUT_MS = 12_000;
+const FEED_FETCH_TIMEOUT_MS = 120_000;
 const FEED_FETCH_CONCURRENCY = 8;
 const MAX_RAW_ITEMS_PER_FEED = 20;
 const MAX_ITEMS_PER_FEED = 3;
