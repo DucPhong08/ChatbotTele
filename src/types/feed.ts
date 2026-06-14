@@ -8,4 +8,5 @@ export type FeedConfig = {
   quality?: FeedQuality;
   minScore?: number;
   minComments?: number;
+  sourceBoost?: number;
 };

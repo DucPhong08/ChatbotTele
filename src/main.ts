@@ -6,9 +6,11 @@ import { startDigestJob } from "./jobs/digest.job";
 import { NewsCollector } from "./news/news.collector";
 import { NewsService } from "./news/news.service";
 import { createFastifyServer } from "./server/fastify.server";
+import { loadSystemConfig, getSystemConfig } from "./config/system-config";
 
 async function bootstrap(): Promise<void> {
   await connectMongo(env.mongoUri);
+  await loadSystemConfig();
 
   const newsService = new NewsService();
   const newsCollector = new NewsCollector(newsService);
@@ -36,7 +38,7 @@ async function bootstrap(): Promise<void> {
     }
   }
 
-  const collectNewsJob = startCollectNewsJob(newsCollector, env.newsCron, bot);
+  const collectNewsJob = startCollectNewsJob(newsCollector, getSystemConfig().newsCron, bot);
   const digestJob = startDigestJob(bot);
   const server = createFastifyServer(bot, env.telegramMode);
 

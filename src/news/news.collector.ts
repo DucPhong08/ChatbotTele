@@ -9,8 +9,7 @@ import { feeds as devFeeds } from "./feed/feeds-dev.config";
 import { feeds as mxhFeeds } from "./feed/feeds-mxh.config";
 import { FeedModel } from "./feed.model";
 import { scrapeArticleContent } from "../utils/scraper";
-
-const feeds = env.feedSource === "mxh" ? mxhFeeds : devFeeds;
+import { getSystemConfig } from "../config/system-config";
 
 type RssFeed = Record<string, unknown>;
 
@@ -43,6 +42,7 @@ type FeedDoc = {
   quality?: FeedQuality;
   minScore?: number;
   minComments?: number;
+  sourceBoost?: number;
 };
 
 const LOG = "[NewsCollector]";
@@ -85,7 +85,7 @@ export class NewsCollector {
   constructor(private readonly newsService: NewsService) {}
 
   async collect(options?: { force?: boolean }): Promise<NewsView[]> {
-    await this.seedFeedsIfEmpty();
+    await this.seedFeeds();
 
     const activeFeeds = await FeedModel.find({ isActive: true }).lean().exec();
     console.log(`${LOG} Bắt đầu quét tin từ ${activeFeeds.length} nguồn đang hoạt động.`);
@@ -119,6 +119,7 @@ export class NewsCollector {
           item.content,
           feed.source,
           item.publishedAt,
+          feed.sourceBoost,
         );
 
         // Official/Engineering có độ tin cậy cao hơn, nhưng vẫn lọc các bài ít liên quan (score < 45)
@@ -339,11 +340,12 @@ export class NewsCollector {
     };
   }
 
-  private async seedFeedsIfEmpty(): Promise<void> {
-    console.log(`${LOG} Đồng bộ hóa ${feeds.length} nguồn tin từ cấu hình tĩnh vào CSDL.`);
+  async seedFeeds(): Promise<void> {
+    const currentFeeds = getSystemConfig().feedSource === "mxh" ? mxhFeeds : devFeeds;
+    console.log(`${LOG} Đồng bộ hóa ${currentFeeds.length} nguồn tin từ cấu hình tĩnh vào CSDL.`);
 
     await FeedModel.bulkWrite(
-      feeds.map((feed) => {
+      currentFeeds.map((feed) => {
         const updateSet: Partial<FeedDoc & { isActive: boolean }> = {
           source: feed.source,
           url: feed.url,
@@ -354,6 +356,7 @@ export class NewsCollector {
         if (feed.quality) updateSet.quality = feed.quality;
         if (typeof feed.minScore === "number") updateSet.minScore = feed.minScore;
         if (typeof feed.minComments === "number") updateSet.minComments = feed.minComments;
+        if (typeof feed.sourceBoost === "number") updateSet.sourceBoost = feed.sourceBoost;
 
         return {
           updateOne: {
@@ -366,7 +369,7 @@ export class NewsCollector {
     );
 
     await FeedModel.updateMany(
-      { url: { $nin: feeds.map((f) => f.url) }, isActive: true },
+      { url: { $nin: currentFeeds.map((f) => f.url) }, isActive: true },
       { $set: { isActive: false } },
     );
   }

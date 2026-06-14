@@ -25,7 +25,7 @@ export function createBot(newsService: NewsService, newsCollector: NewsCollector
   registerStatsCommand(bot);
   registerFeedCommands(bot);
   registerCategoryCommand(bot);
-  registerSettingsCommand(bot);
+  registerSettingsCommand(bot, newsCollector);
   registerFeedbackCommand(bot);
   bot.catch(handleBotError);
 

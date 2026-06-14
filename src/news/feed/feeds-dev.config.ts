@@ -51,6 +51,33 @@ export const feeds: FeedConfig[] = [
     quality: "engineering",
     minScore: 70,
   },
+  // [+] AI engineering / tooling
+  {
+    source: "Weights & Biases Blog",
+    url: "https://wandb.ai/fully-connected/rss.xml",
+    category: "ai",
+    skills: ["ai", "mlops", "experiment-tracking", "machine-learning"],
+    quality: "engineering",
+    minScore: 65,
+  },
+  {
+    source: "LlamaIndex Blog",
+    url: "https://medium.com/feed/llamaindex-blog",
+    category: "ai",
+    skills: ["llm", "rag", "agents", "ai-engineering"],
+    quality: "engineering",
+    minScore: 65,
+  },
+  // Arxiv CS.AI: feed cực kỳ noisy (100+ paper/ngày). minScore 85 để chỉ lấy
+  // những paper được HN/cộng đồng chú ý nhiều. Theo dõi sát tuần đầu sau deploy.
+  {
+    source: "Arxiv CS.AI",
+    url: "https://rss.arxiv.org/rss/cs.AI",
+    category: "ai",
+    skills: ["ai", "research", "machine-learning", "deep-learning"],
+    quality: "official",
+    minScore: 60,
+  },
 
   // ===== Hacker News =====
 
@@ -156,6 +183,23 @@ export const feeds: FeedConfig[] = [
     quality: "engineering",
     minScore: 70,
   },
+  // [+] Go và Rust — gap lớn trong danh sách backend
+  {
+    source: "Go Blog",
+    url: "https://go.dev/blog/feed.atom",
+    category: "backend",
+    skills: ["go", "backend", "runtime", "performance"],
+    quality: "official",
+    minScore: 70,
+  },
+  {
+    source: "This Week in Rust",
+    url: "https://this-week-in-rust.org/rss.xml",
+    category: "backend",
+    skills: ["rust", "systems-programming", "performance", "backend"],
+    quality: "engineering",
+    minScore: 70,
+  },
 
   // ===== Database =====
 
@@ -234,6 +278,100 @@ export const feeds: FeedConfig[] = [
     quality: "engineering",
     minScore: 70,
   },
+  // [+] Observability gap
+  {
+    source: "Grafana Blog",
+    url: "https://grafana.com/blog/index.xml",
+    category: "devops",
+    skills: ["observability", "monitoring", "grafana", "metrics"],
+    quality: "engineering",
+    minScore: 65,
+  },
+
+  // ===== Mobile =====
+  // [+] category "mobile" trước đây không có feed nào
+
+  {
+    source: "Swift Blog",
+    url: "https://www.swift.org/atom.xml",
+    category: "mobile",
+    skills: ["swift", "ios", "apple", "mobile"],
+    quality: "official",
+    minScore: 70,
+    sourceBoost: 20,
+  },
+  {
+    source: "Android Developers Blog",
+    url: "https://android-developers.googleblog.com/feeds/posts/default",
+    category: "mobile",
+    skills: ["android", "kotlin", "mobile", "google"],
+    quality: "official",
+    minScore: 65,
+    sourceBoost: 20,
+  },
+  {
+    source: "Flutter Blog",
+    url: "https://medium.com/flutter/feed",
+    category: "mobile",
+    skills: ["flutter", "dart", "mobile", "cross-platform"],
+    quality: "official",
+    minScore: 65,
+    sourceBoost: 20,
+  },
+  {
+    source: "Reddit iOSProgramming",
+    url: "https://www.reddit.com/r/iOSProgramming/hot/.rss",
+    category: "mobile",
+    skills: ["ios", "swift", "xcode", "mobile"],
+    quality: "discussion",
+    minScore: 65,
+    minComments: 20,
+  },
+  {
+    source: "Reddit AndroidDev",
+    url: "https://www.reddit.com/r/androiddev/hot/.rss",
+    category: "mobile",
+    skills: ["android", "kotlin", "jetpack-compose", "mobile"],
+    quality: "discussion",
+    minScore: 65,
+    minComments: 20,
+  },
+
+  // ===== Career =====
+  // [+] category "career" trước đây không có feed nào
+  // Lưu ý: Lenny's Newsletter và The Pragmatic Engineer là Substack —
+  // kiểm tra thực tế xem feed có bị paywall cắt không, nếu có thì xóa.
+
+  {
+    source: "Lenny's Newsletter",
+    url: "https://www.lennysnewsletter.com/feed",
+    category: "career",
+    skills: ["product", "career", "engineering-management", "productivity"],
+    quality: "engineering",
+    minScore: 70,
+    sourceBoost: 20,
+  },
+  {
+    source: "The Pragmatic Engineer",
+    url: "https://newsletter.pragmaticengineer.com/feed",
+    category: "career",
+    skills: ["career", "engineering-management", "salary", "big-tech"],
+    quality: "engineering",
+    minScore: 75,
+    sourceBoost: 20,
+  },
+  {
+    source: "Will Larson (Lethain)",
+    url: "https://lethain.com/feeds.xml",
+    category: "career",
+    skills: ["career", "staff-engineer", "engineering-leadership", "ic-track"],
+    quality: "engineering",
+    minScore: 70,
+    sourceBoost: 20,
+  },
+
+  // ===== Security =====
+
   {
     source: "Google Project Zero",
     url: "https://googleprojectzero.blogspot.com/feeds/posts/default?alt=rss",
@@ -241,6 +379,31 @@ export const feeds: FeedConfig[] = [
     skills: ["security", "vulnerability", "exploit-analysis"],
     quality: "official",
     minScore: 70,
+  },
+  // [+] Security gap — chỉ có Project Zero và Node.js Vuln là quá ít
+  {
+    source: "Krebs on Security",
+    url: "https://krebsonsecurity.com/feed/",
+    category: "security",
+    skills: ["security", "cybercrime", "vulnerability", "breach"],
+    quality: "engineering",
+    minScore: 70,
+  },
+  {
+    source: "Schneier on Security",
+    url: "https://www.schneier.com/feed/atom/",
+    category: "security",
+    skills: ["security", "cryptography", "privacy", "policy"],
+    quality: "engineering",
+    minScore: 70,
+  },
+  {
+    source: "CISA Advisories",
+    url: "https://www.cisa.gov/uscert/ncas/alerts.xml",
+    category: "security",
+    skills: ["security", "vulnerability", "cve", "advisory"],
+    quality: "official",
+    minScore: 75,
   },
 
   // ===== Linux / VPS =====
@@ -297,7 +460,7 @@ export const feeds: FeedConfig[] = [
     category: "backend",
     skills: ["backend", "architecture", "database"],
     quality: "discussion",
-    minScore: 60,
+    minScore: 65, // [fix] tăng từ 60 → 65 để đồng nhất với các Reddit khác
     minComments: 20,
   },
   {
@@ -306,7 +469,7 @@ export const feeds: FeedConfig[] = [
     category: "backend",
     skills: ["postgresql", "query-plan", "replication"],
     quality: "discussion",
-    minScore: 60,
+    minScore: 65, // [fix] tăng từ 60 → 65
     minComments: 20,
   },
   {
@@ -378,6 +541,7 @@ export const feeds: FeedConfig[] = [
     skills: ["nextjs", "frontend", "deployment"],
     quality: "engineering",
     minScore: 70,
+    sourceBoost: 20,
   },
   {
     source: "Next.js Blog",
@@ -386,6 +550,7 @@ export const feeds: FeedConfig[] = [
     skills: ["nextjs", "react", "frontend"],
     quality: "official",
     minScore: 70,
+    sourceBoost: 20,
   },
   {
     source: "React Blog",
@@ -394,6 +559,7 @@ export const feeds: FeedConfig[] = [
     skills: ["react", "frontend", "javascript"],
     quality: "official",
     minScore: 70,
+    sourceBoost: 20,
   },
   {
     source: "Vue.js Blog",
@@ -402,6 +568,7 @@ export const feeds: FeedConfig[] = [
     skills: ["vue", "frontend", "javascript"],
     quality: "official",
     minScore: 70,
+    sourceBoost: 20,
   },
   {
     source: "Angular Blog",
@@ -410,6 +577,7 @@ export const feeds: FeedConfig[] = [
     skills: ["angular", "typescript", "frontend"],
     quality: "official",
     minScore: 70,
+    sourceBoost: 20,
   },
   {
     source: "Tailwind CSS Blog",
@@ -418,15 +586,9 @@ export const feeds: FeedConfig[] = [
     skills: ["tailwind", "css", "frontend"],
     quality: "official",
     minScore: 70,
+    sourceBoost: 20,
   },
-  {
-    source: "CSS-Tricks",
-    url: "https://css-tricks.com/feed/",
-    category: "frontend",
-    skills: ["css", "frontend", "web"],
-    quality: "engineering",
-    minScore: 75,
-  },
+  // [removed] CSS-Tricks — ngừng đăng bài mới từ cuối 2023
   {
     source: "Smashing Magazine",
     url: "https://www.smashingmagazine.com/feed/",
@@ -469,14 +631,8 @@ export const feeds: FeedConfig[] = [
   },
 
   // ===== System Design & Tutorials =====
-  {
-    source: "ByteByteGo",
-    url: "https://blog.bytebytego.com/feed",
-    category: "backend",
-    skills: ["system-design", "architecture", "scaling", "database"],
-    quality: "engineering",
-    minScore: 70,
-  },
+
+  // [removed] ByteByteGo — Substack paywall cắt nội dung, model nhận bài cụt
   {
     source: "DigitalOcean Blog",
     url: "https://www.digitalocean.com/blog/rss/",
@@ -503,6 +659,7 @@ export const feeds: FeedConfig[] = [
   },
 
   // ===== Database & ORM =====
+
   {
     source: "Prisma Blog",
     url: "https://www.prisma.io/blog/rss.xml",
@@ -527,14 +684,7 @@ export const feeds: FeedConfig[] = [
     quality: "official",
     minScore: 65,
   },
-  {
-    source: "PlanetScale Blog",
-    url: "https://planetscale.com/blog/rss.xml",
-    category: "backend",
-    skills: ["database", "mysql", "sql", "sharding", "vitess", "query-optimization"],
-    quality: "engineering",
-    minScore: 70,
-  },
+  // [removed] PlanetScale Blog — đóng free tier, blog gần như không còn cập nhật
   {
     source: "Supabase Blog",
     url: "https://supabase.com/feed.xml",
@@ -560,14 +710,16 @@ export const feeds: FeedConfig[] = [
     minScore: 70,
   },
 
-  // ===== Cộng đồng Việt Nam =====
+  // ===== Cộng đồng Việt Nam & châu Á =====
+
   {
     source: "Viblo",
     url: "https://viblo.asia/rss",
     category: "backend",
     skills: ["programming", "backend", "frontend", "devops", "cloud", "database"],
     quality: "engineering",
-    minScore: 60,
+    minScore: 65, // [fix] tăng từ 60 → 65, chất lượng bài Viblo không đồng đều
+    minComments: 5,
   },
   {
     source: "Ehkoo",
@@ -577,14 +729,7 @@ export const feeds: FeedConfig[] = [
     quality: "engineering",
     minScore: 65,
   },
-  {
-    source: "Juno_okyo",
-    url: "https://www.junookyo.com/feeds/posts/default",
-    category: "security",
-    skills: ["security", "web-tools", "utilities", "programming"],
-    quality: "discussion",
-    minScore: 65,
-  },
+  // [removed] Juno_okyo — Blogger cá nhân, không còn active ổn định
   {
     source: "Zenn",
     url: "https://zenn.dev/feed",
@@ -617,20 +762,6 @@ export const feeds: FeedConfig[] = [
     quality: "official",
     minScore: 65,
   },
-  {
-    source: "VnExpress So Hoa",
-    url: "https://vnexpress.net/rss/so-hoa.rss",
-    category: "other",
-    skills: ["frontend", "web", "ux", "design"],
-    quality: "discussion",
-    minScore: 50,
-  },
-  {
-    source: "Tinhte",
-    url: "https://tinhte.vn/rss",
-    category: "other",
-    skills: ["web", "gadgets", "tech", "community"],
-    quality: "discussion",
-    minScore: 50,
-  },
+  // [removed] VnExpress So Hoa — consumer tech news, ít technical insight cho dev audience
+  // [removed] Tinhte — tương tự VnExpress, không phù hợp với dev audience
 ];

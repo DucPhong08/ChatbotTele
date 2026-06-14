@@ -75,13 +75,34 @@ const KEYWORD_RULES: KeywordRule[] = [
   {
     category: "security",
     tag: "security",
-    keywords: ["security", "vulnerability", "cve", "exploit", "zero-day", "patch", "breach"],
+    keywords: [
+      "security",
+      "vulnerability",
+      "cve",
+      "exploit",
+      "zero-day",
+      "patch",
+      "breach",
+      "cybercrime",
+      "cryptography",
+    ],
     score: 14,
   },
   {
     category: "ai",
     tag: "ai",
-    keywords: ["ai", "llm", "agent", "model", "inference", "fine-tuning", "rag", "embedding"],
+    keywords: [
+      "ai",
+      "llm",
+      "agent",
+      "model",
+      "inference",
+      "fine-tuning",
+      "rag",
+      "embedding",
+      "mlops",
+      "ai-engineering",
+    ],
     score: 10,
   },
   {
@@ -97,6 +118,10 @@ const KEYWORD_RULES: KeywordRule[] = [
       "redis",
       "runtime",
       "queue",
+      "go",
+      "golang",
+      "rust",
+      "systems-programming",
     ],
     score: 9,
   },
@@ -112,6 +137,29 @@ const KEYWORD_RULES: KeywordRule[] = [
       "css",
       "browser",
       "web app",
+      "vue",
+      "angular",
+      "webpack",
+      "vite",
+      "web performance",
+      "frontend",
+      "html",
+    ],
+    score: 8,
+  },
+  {
+    category: "mobile",
+    tag: "mobile",
+    keywords: [
+      "ios",
+      "android",
+      "swift",
+      "kotlin",
+      "flutter",
+      "react native",
+      "xcode",
+      "jetpack",
+      "mobile",
     ],
     score: 8,
   },
@@ -127,6 +175,11 @@ const KEYWORD_RULES: KeywordRule[] = [
       "kubernetes",
       "ci/cd",
       "serverless",
+      "observability",
+      "monitoring",
+      "grafana",
+      "metrics",
+      "sre",
     ],
     score: 8,
   },
@@ -168,8 +221,14 @@ const KEYWORD_RULES: KeywordRule[] = [
       "salary",
       "developer productivity",
       "developer experience",
+      "engineering manager",
+      "staff engineer",
+      "principal",
+      "layoff",
+      "burnout",
+      "productivity",
     ],
-    score: 5,
+    score: 7,
   },
 ];
 
@@ -177,7 +236,7 @@ export class AIService {
   private static async fetchWithTimeout(
     url: string,
     options: RequestInit,
-    timeoutMs = 8000,
+    timeoutMs = 30000,
   ): Promise<Response> {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -669,7 +728,9 @@ ${text}`;
       clean.includes("trí tuệ nhân tạo") ||
       clean.includes("intelligence") ||
       clean.includes("llm") ||
-      clean.includes("gpt")
+      clean.includes("gpt") ||
+      clean.includes("mlops") ||
+      clean.includes("ai-engineering")
     ) {
       categories.push("ai");
     }
@@ -679,7 +740,11 @@ ${text}`;
       clean.includes("database") ||
       clean.includes("cơ sở dữ liệu") ||
       clean.includes("api") ||
-      clean.includes("nodejs")
+      clean.includes("nodejs") ||
+      clean.includes("go") ||
+      clean.includes("golang") ||
+      clean.includes("rust") ||
+      clean.includes("systems-programming")
     ) {
       categories.push("backend");
     }
@@ -699,7 +764,12 @@ ${text}`;
       clean.includes("aws") ||
       clean.includes("docker") ||
       clean.includes("kubernetes") ||
-      clean.includes("ci/cd")
+      clean.includes("ci/cd") ||
+      clean.includes("observability") ||
+      clean.includes("monitoring") ||
+      clean.includes("grafana") ||
+      clean.includes("metrics") ||
+      clean.includes("sre")
     ) {
       categories.push("devops");
     }
@@ -1460,7 +1530,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
           temperature: 0.3,
         }),
       },
-      endpoint.includes("127.0.0.1") || endpoint.includes("localhost") ? 120000 : 8000,
+      endpoint.includes("127.0.0.1") || endpoint.includes("localhost") ? 120000 : 30000,
     );
 
     if (!response.ok) {
@@ -1490,7 +1560,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
           },
         }),
       },
-      8000,
+      30000,
     );
 
     if (!response.ok) {
@@ -2067,6 +2137,7 @@ ${JSON.stringify(articlesJson, null, 2)}`;
     content: string,
     source: string,
     publishedAt: Date,
+    sourceBoost = 0,
   ): InferredMetadata {
     const text = `${title} ${this.cleanContent(content)}`.toLowerCase();
     const tags = new Set<string>();
@@ -2089,11 +2160,13 @@ ${JSON.stringify(articlesJson, null, 2)}`;
         ? 10
         : category === "ai"
           ? 8
-          : ["backend", "devops"].includes(category)
+          : ["backend", "devops", "frontend", "mobile"].includes(category)
             ? 5
-            : 0;
+            : category === "career"
+              ? 3
+              : 0;
     const importanceScore = this.clampScore(
-      25 + sourceScore + Math.min(keywordScore, 35) + freshnessScore + categoryBoost,
+      25 + sourceScore + Math.min(keywordScore, 35) + freshnessScore + categoryBoost + sourceBoost,
     );
 
     if (tags.size === 0 && category !== "other") {

@@ -9,6 +9,7 @@ export interface IFeed {
   quality?: FeedQuality;
   minScore?: number;
   minComments?: number;
+  sourceBoost?: number;
   isActive: boolean;
   submittedBy?: string;
   approvedBy?: string;
@@ -27,6 +28,7 @@ const feedSchema = new Schema<IFeed>(
     quality: { type: String, trim: true },
     minScore: { type: Number, min: 1, max: 100 },
     minComments: { type: Number, min: 0 },
+    sourceBoost: { type: Number, default: 0 },
     isActive: { type: Boolean, default: false },
     submittedBy: { type: String, trim: true },
     approvedBy: { type: String, trim: true },
